@@ -260,6 +260,7 @@ Extract all data for this YouTube video and summarize the transcript.
 
 5. Replace the raw transcript with a **STRUCTURED SUMMARY**:
    - Keep the **Transcript Info** (auto-generated/manual, language) as the first line
+   - The Python script already emits canonical section order, screenshot filename conventions, timestamp formatting, screenshot status wording, and screenshot/transcript embedding structure. Preserve those deterministic parts exactly as emitted.
    - If no transcript is available: return only the note "No transcript available."
    - Build the summary with exactly this structure:
 
@@ -314,6 +315,8 @@ Return the complete script output as the answer — including the trailing `OUTP
 ## Step 2 — Format and output the results
 
 Once all subagents have finished, parse the markdown blocks from the results and format the output:
+
+The Python backend is the source of truth for deterministic formatting. The skill should decide workflow, ask user questions, dispatch subagents, summarize transcript content, and assemble multi-video output. It should not reinvent low-level markdown conventions that the script already renders consistently.
 
 ### With exactly 1 URL:
 

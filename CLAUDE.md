@@ -50,10 +50,34 @@ User-facing flags (`--comments`, `--screenshots [timestamps]`, `--full-transcrip
 
 ## Testing
 
-No automated tests yet. Verification is manual: install the plugin locally and
-run `/yt-extract <real-youtube-url>` with and without `--screenshots`,
-`--comments`, `--full-transcript`. Confirm the auto-save folder layout and
-Markdown headers match the documented output structure.
+A small automated test layer covers the deterministic helper functions in
+`scripts/yt-extract.py` — `slugify`, the timestamp formatters and parser,
+and the `render_*` helpers that build the fixed section headers. The tests
+are **pure Python**: they do not spawn `yt-dlp`, `ffmpeg`, or any
+subprocess, and do not hit the network — so nothing beyond `pytest` is
+required to run them.
+
+**Requirements:** Python 3.9+. Dev dependency: `pytest` only.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Expected output: all tests pass in well under a second.
+
+**Not covered by this unit suite:** subprocess invocations (`yt-dlp`,
+`ffmpeg`), file I/O, network calls, VTT parsing, and the full `main()`
+assembly with the trailing `OUTPUT_FOLDER:` marker. Those paths rely on
+manual verification today — broadening the automated surface (subprocess
+fakes, a VTT fixture, golden-file tests for `main()`) is a reasonable
+follow-up.
+
+Manual verification still matters for the full integration path: install
+the plugin locally and run `/yt-extract <real-youtube-url>` with and
+without `--screenshots`, `--comments`, `--full-transcript`. Confirm the
+auto-save folder layout and Markdown headers match the documented output
+structure.
 
 ## Cross-platform invocation
 

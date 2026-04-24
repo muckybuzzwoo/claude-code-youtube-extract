@@ -244,7 +244,7 @@ Every extraction ends with a concise **"What next?"** invitation that lists conc
 ### Components
 
 - **`skills/yt-extract/SKILL.md`** — The skill definition. Parses URLs and flags, detects the host OS, checks dependencies, dispatches one subagent per URL for summarization, assembles the final Markdown output, handles auto-save and folder layout.
-- **`scripts/yt-extract.py`** — The Python backend. Calls `yt-dlp` for metadata/subtitles/comments, parses VTT with timestamps, calls `ffmpeg` for screenshots, emits structured Markdown to stdout.
+- **`scripts/yt-extract.py`** — The Python backend. Calls `yt-dlp` for metadata/subtitles/comments, parses VTT with timestamps, calls `ffmpeg` for screenshots, and owns deterministic markdown rendering details such as section ordering, timestamp formatting, screenshot filename conventions, and screenshot/transcript layout.
 
 ## Anatomy of a Saved File
 

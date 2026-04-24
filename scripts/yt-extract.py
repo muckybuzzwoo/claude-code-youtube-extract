@@ -129,6 +129,133 @@ def format_date(upload_date: str) -> str:
     return upload_date
 
 
+def render_metadata(meta: dict) -> str:
+    return "\n".join([
+        "### Metadata",
+        f"title: {meta['title']}",
+        f"channel: {meta['channel']}",
+        f"date: {format_date(meta['upload_date'])}",
+        f"duration: {meta['duration_string']}",
+        f"duration_seconds: {meta['duration']}",
+        f"views: {meta['view_count']}",
+        f"likes: {meta['like_count']}",
+        f"is_live: {meta['is_live']}",
+        f"was_live: {meta['was_live']}",
+        "",
+    ])
+
+
+def render_description(description: str) -> str:
+    return "\n".join([
+        "### Description",
+        filter_description(description),
+        "",
+    ])
+
+
+def render_chapters(chapters: list[dict]) -> str:
+    if not chapters:
+        return ""
+
+    lines = ["### Chapters"]
+    for ch in chapters:
+        ts_display = format_timestamp_display(ch["start_time"])
+        lines.append(f"- [{ts_display}] {ch['title']}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_transcript_info(sub_hint: str, duration: float) -> str:
+    lines = ["### Transcript Info", sub_hint]
+    if duration and duration > 3600:
+        lines.append(f"Video is {int(duration) // 60} min long — full transcript")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_transcript(
+    transcript: str,
+    segments: list[tuple[float, str]],
+    screenshots: list[tuple[float, str]],
+    chapters: list[dict],
+) -> str:
+    lines = ["### Transcript"]
+    if transcript:
+        if screenshots and segments:
+            lines.append(embed_screenshots_in_transcript(segments, screenshots, chapters))
+        else:
+            lines.append(transcript)
+    else:
+        lines.append("No transcript available.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_screenshots_section(
+    screenshots_enabled: bool,
+    screenshot_marker: str,
+    screenshots: list[tuple[float, str]],
+    chapters: list[dict],
+    duration: float,
+) -> str:
+    if not screenshots_enabled:
+        return ""
+
+    lines = ["### Screenshots"]
+    if screenshot_marker == "FFMPEG_MISSING":
+        lines.append("FFMPEG_MISSING")
+    elif screenshot_marker == "SCREENSHOTS_ASK_USER":
+        lines.append("SCREENSHOTS_ASK_USER")
+        lines.append(f"video_duration: {duration}")
+    else:
+        for ts, filename in screenshots:
+            chapter_title = get_chapter_for_timestamp(ts, chapters)
+            ts_display = format_timestamp_display(ts)
+            rel_path = f"screenshots/{filename}"
+            if chapter_title:
+                lines.append(f"- ![{ts_display} — {chapter_title}]({rel_path}) {ts_display} — {chapter_title}")
+            else:
+                lines.append(f"- ![{ts_display}]({rel_path}) {ts_display}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_screenshot_status(
+    screenshots_enabled: bool,
+    screenshot_marker: str,
+    screenshot_requested: int,
+    screenshots: list[tuple[float, str]],
+    screenshot_warnings: list[str],
+) -> str:
+    if not screenshots_enabled:
+        return ""
+
+    lines = ["### Screenshot Status"]
+    if screenshot_marker:
+        lines.append(screenshot_marker)
+    elif screenshot_requested > 0:
+        success = len(screenshots)
+        lines.append(
+            f"{screenshot_requested} screenshots requested, {success} successfully extracted."
+        )
+    for warning in screenshot_warnings:
+        lines.append(f"- WARNING: {warning}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_comments(comments_requested: bool, comments: list[dict]) -> str:
+    lines = ["### Comments"]
+    if not comments_requested:
+        lines.append("SKIPPED")
+    elif comments:
+        for i, c in enumerate(comments, 1):
+            lines.append(f"{i}. **{c['author']}** (👍 {c['likes']}) — {c['text']}")
+    else:
+        lines.append("Comments not available.")
+    return "\n".join(lines)
+
+
 # --- Core extraction functions ---
 
 
@@ -685,88 +812,29 @@ def main():
 
     # --- Output structured markdown ---
 
-    print("### Metadata")
-    print(f"title: {meta['title']}")
-    print(f"channel: {meta['channel']}")
-    print(f"date: {format_date(meta['upload_date'])}")
-    print(f"duration: {meta['duration_string']}")
-    print(f"duration_seconds: {meta['duration']}")
-    print(f"views: {meta['view_count']}")
-    print(f"likes: {meta['like_count']}")
-    print(f"is_live: {meta['is_live']}")
-    print(f"was_live: {meta['was_live']}")
-    print()
-
-    print("### Description")
-    print(filter_description(meta["description"]))
-    print()
-
-    if meta["chapters"]:
-        print("### Chapters")
-        for ch in meta["chapters"]:
-            ts_display = format_timestamp_display(ch["start_time"])
-            print(f"- [{ts_display}] {ch['title']}")
-        print()
-
-    print("### Transcript Info")
-    print(sub_hint)
-    if meta["duration"] and meta["duration"] > 3600:
-        print(f"Video is {meta['duration'] // 60} min long — full transcript")
-    print()
-
-    print("### Transcript")
-    if transcript:
-        if screenshots and segments:
-            enriched = embed_screenshots_in_transcript(
-                segments, screenshots, meta["chapters"]
-            )
-            print(enriched)
-        else:
-            print(transcript)
-    else:
-        print("No transcript available.")
-    print()
-
-    if args.screenshots is not None:
-        print("### Screenshots")
-        if screenshot_marker == "FFMPEG_MISSING":
-            print("FFMPEG_MISSING")
-        elif screenshot_marker == "SCREENSHOTS_ASK_USER":
-            print("SCREENSHOTS_ASK_USER")
-            print(f"video_duration: {meta['duration']}")
-        else:
-            for ts, filename in screenshots:
-                chapter_title = get_chapter_for_timestamp(ts, meta["chapters"])
-                ts_display = format_timestamp_display(ts)
-                rel_path = f"screenshots/{filename}"
-                if chapter_title:
-                    print(f"- ![{ts_display} — {chapter_title}]({rel_path}) {ts_display} — {chapter_title}")
-                else:
-                    print(f"- ![{ts_display}]({rel_path}) {ts_display}")
-        print()
-
-        print("### Screenshot Status")
-        if screenshot_marker:
-            print(screenshot_marker)
-        elif screenshot_requested > 0:
-            success = len(screenshots)
-            if success == screenshot_requested:
-                print(f"{success} screenshots requested, {success} successfully extracted.")
-            else:
-                print(f"{screenshot_requested} screenshots requested, {success} successfully extracted.")
-        if screenshot_warnings:
-            for w in screenshot_warnings:
-                print(f"- WARNING: {w}")
-        print()
-
-    print("### Comments")
-    if not args.comments:
-        print("SKIPPED")
-    elif comments:
-        for i, c in enumerate(comments, 1):
-            print(f"{i}. **{c['author']}** (👍 {c['likes']}) — {c['text']}")
-    else:
-        print("Comments not available.")
+    sections = [
+        render_metadata(meta),
+        render_description(meta["description"]),
+        render_chapters(meta["chapters"]),
+        render_transcript_info(sub_hint, meta["duration"]),
+        render_transcript(transcript, segments, screenshots, meta["chapters"]),
+        render_screenshots_section(
+            args.screenshots is not None,
+            screenshot_marker,
+            screenshots,
+            meta["chapters"],
+            meta["duration"],
+        ),
+        render_screenshot_status(
+            args.screenshots is not None,
+            screenshot_marker,
+            screenshot_requested,
+            screenshots,
+            screenshot_warnings,
+        ),
+        render_comments(args.comments, comments),
+    ]
+    print("\n".join(section for section in sections if section))
 
     # --- Trailer: tell the orchestrator where the output folder lives ---
     # Forward slashes so the marker is stable across platforms — the skill
