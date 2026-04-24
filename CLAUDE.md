@@ -16,7 +16,7 @@ subagent per URL for transcript summarization.
 | Skill  | `skills/yt-extract/SKILL.md`  | User-invocable workflow (`/yt-extract`)   |
 | Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT    |
 
-Current version: **1.3.0** — see [CHANGELOG.md](CHANGELOG.md).
+Current version: **1.4.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Architectural conventions
 
@@ -57,12 +57,14 @@ are **pure Python**: they do not spawn `yt-dlp`, `ffmpeg`, or any
 subprocess, and do not hit the network — so nothing beyond `pytest` is
 required to run them.
 
-**Requirements:** Python 3.9+. Dev dependency: `pytest` only.
+**Requirements:** Python 3.8+. Dev dependency: `pytest` only.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest
+python -m pytest tests/
 ```
+
+On Windows, `pip install` may place the `pytest` binary outside `PATH` (e.g. `%APPDATA%\Python\Python3XX\Scripts\`). Using `python -m pytest` avoids that — it works everywhere without requiring a PATH update.
 
 Expected output: all tests pass in well under a second.
 

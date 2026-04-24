@@ -562,6 +562,7 @@ videos:
 - **ffmpeg not installed:** handled in Step 0.5 before subagent dispatch (install-on-demand with per-OS command). `FFMPEG_MISSING` marker in the script output is defensive-only — normally unreachable.
 - **--screenshots without chapter markers and without timestamps:** `SCREENSHOTS_ASK_USER` marker → ask user for strategy (evenly distributed or manual input)
 - **Timestamp outside video duration:** skipped by the Python script with a WARNING, no interruption
+- **Stream URL expired:** if ffmpeg reports a stale/expired stream URL (HTTP 403 or similar during screenshot extraction), re-run the script once — yt-dlp fetches a fresh URL on each invocation. Surface the retry to the user as a one-line status.
 - **Target folder already exists:** script exits 2 with `FOLDER_EXISTS: <path>` on stderr → subagent prompts the user via AskUserQuestion and re-runs with `--force` on confirmation. Multi-URL parent-folder collisions are handled by the skill itself before dispatch (see Step 1).
 
 ---

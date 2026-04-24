@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.3.0-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.4.0-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -27,7 +27,7 @@ Tutorial videos are trapped knowledge. The content is valuable, but it sits behi
 
 | Type  | Name         | Version | Description                                                                 |
 |-------|--------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract` | 1.3.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Skill | `yt-extract` | 1.4.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -405,7 +405,7 @@ yt-extract requires [Claude Code](https://claude.com/claude-code) and two CLI de
 
 ## Prerequisites
 
-Cross-platform: macOS, Linux, and Windows are all supported. Python 3.9+ is required (use `python3` on macOS/Linux, `python` on Windows — the skill picks the right one automatically).
+Cross-platform: macOS, Linux, and Windows are all supported. Python 3.8+ is required (use `python3` on macOS/Linux, `python` on Windows — the skill picks the right one automatically).
 
 **Required — [yt-dlp](https://github.com/yt-dlp/yt-dlp)** — YouTube data extraction:
 
@@ -510,4 +510,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.3.0 — [Changelog](CHANGELOG.md)
+Version: 1.4.0 — [Changelog](CHANGELOG.md)

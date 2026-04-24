@@ -4,6 +4,53 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-04-24
+
+Contributor-driven maintenance release. Two merged pull requests split off the install-on-demand helper from `SKILL.md`, refactored the Python script's markdown output into small pure `render_*` functions, and added a pytest-based unit suite for the deterministic helpers. No user-visible behavior changes — the markdown output and sentinel contracts are unchanged. Python 3.8 remains the minimum (the earlier 3.9 bump was reverted because `from __future__ import annotations` makes all generic-builtin annotations lazy).
+
+### yt-extract skill
+
+#### Added
+- `skills/yt-extract/references/install-helper.md` — the previously inlined install-on-demand sub-workflow (Steps A0, A, B, C, D, E, F) is now a standalone reference. `SKILL.md` Step 0.6 loads it with the parameters `dep_name`, `options`, `doc_url`, `on_decline`, `verify_cmd`. Keeps `SKILL.md` lean; the helper can be updated without touching the main skill file.
+- Step 0.3.a — Python runtime check (`<PY> --version`) runs before the yt-dlp check. Missing Python or an install-tool dialog (macOS CLT prompt, `command not found`) aborts immediately with an OS-specific message; earlier steps no longer silently skip it.
+- `--check` mode also invokes `<PY> --version` so the readiness report includes the Python version alongside yt-dlp / ffmpeg.
+- macOS yt-dlp install offers both `brew` and `pip3` (`pip3 install --user yt-dlp`). Previously brew-only.
+- "Extending this skill" contributor section at the bottom of `SKILL.md` — points new contributors at `CLAUDE.md`, documents where to add a user-facing flag / install target / sentinel / Markdown section, and calls out the line-count budget relaxation from `disable-model-invocation: true`.
+
+#### Changed
+- UI emojis (✅, ℹ️, ❌, 💬, 💡) in `SKILL.md` prose replaced with plain text. The `👍` in `render_comments()` output is intentionally kept — it is part of the extracted markdown data, not the skill UI.
+- Edge cases list cleaned up; the "Stream URL expired" entry that was accidentally dropped in the refactor has been restored with the intended re-run-once guidance.
+
+### yt-extract.py (backend)
+
+#### Added
+- `from __future__ import annotations` at the top of the script — makes all generic-builtin annotations (`list[dict]`, `str | None`, etc.) lazy strings so the 3.8 minimum holds.
+- Eight pure `render_*` helpers — `render_metadata`, `render_description`, `render_chapters`, `render_transcript_info`, `render_transcript`, `render_screenshots_section`, `render_screenshot_status`, `render_comments`. Each returns a string; `main()` assembles the final output with `"\n".join(section for section in sections if section)` and a single `print()`.
+
+#### Changed
+- `main()` no longer intersperses business logic with `print()` calls; extraction now happens first, then rendering, then a single flush. Output format is unchanged but the section boundaries now follow a consistent single-blank-line convention.
+
+### Tests
+
+#### Added
+- `tests/test_rendering.py` — 26 pytest cases covering `slugify`, `format_timestamp_display`, `format_timestamp_filename`, `parse_timestamp`, and the `render_*` helpers. Module loading uses `importlib.util.spec_from_file_location` because the script filename contains a hyphen.
+- `requirements-dev.txt` with a single dependency: `pytest>=8.0.0`.
+
+#### Notes
+- Run with `python -m pytest tests/`. On Windows, `pip install --user` places the bare `pytest` binary outside `PATH` — using `python -m pytest` avoids that without a PATH fix.
+
+### Docs
+
+#### Changed
+- `README.md` — Python requirement labelled 3.8+ (badge was already 3.8+; the prose line is now aligned). Script description mentions "deterministic markdown rendering".
+- `CLAUDE.md` — Testing section documents the pytest layout, the 3.8+ requirement, and the Windows-friendly `python -m pytest tests/` invocation. The install-helper matrices still reference the extracted helper via path instead of inline step numbers.
+
+#### Migration notes
+- Users who have already installed v1.3.0 need no action — the markdown output, folder layout, and CLI flags are identical. Run `/plugin update` to pick up the refactor.
+- Contributors running tests for the first time on Windows: prefer `python -m pytest tests/` over bare `pytest` (see `CLAUDE.md`).
+
+- @mucky
+
 ## [1.3.0] — 2026-04-20
 
 Transcript quality fixes + structured full-transcript output. The VTT parser was leaking metadata headers and failing to dedup YouTube's rolling-caption 3-line window, producing `Kind: captions Language: en` at the top of transcripts and 2-3× word repetitions throughout. The chapter-aligned screenshot embedding from v1.1.0 also wasn't coordinated with `--full-transcript` mode — screenshots ended up both under `## Chapters` and inline in the transcript. All fixed in this release.
