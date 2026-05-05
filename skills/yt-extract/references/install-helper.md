@@ -93,6 +93,14 @@ Execute `options[chosen_index].command` via Bash exactly as written (the command
 
 Run `verify_cmd`. If it succeeds (exit 0), the install worked — return success to the caller.
 
+**Windows post-install PATH-recovery fallback.** If `verify_cmd` fails AND `<OS> == Windows`: invoke **Step W (Windows PATH Recovery)** below with the same `dep_name` and `verify_cmd`. Dispatch on Step W's return state:
+
+- `recovered` → return success to the caller (the user already consented to recovery in W.3 — no second prompt).
+- `staged_for_restart` → emit Step W's restart message and **abort the skill** regardless of `on_decline` (matches Step E semantics — a half-installed dep is broken). Step E is not reached because Step W has replaced it.
+- `not_found` or `copy_failed` → fall through to Step E.
+
+Otherwise (non-Windows, or Step W declined recovery) → proceed to Step E.
+
 ## Step E — On verification failure
 
 (Install command returned exit 0, or winget exit 43, but binary still not on PATH.)
@@ -135,3 +143,143 @@ Docs: [doc_url]
 ```
 
 **Abort the skill.**
+
+## Step W — Windows PATH Recovery (Windows only)
+
+Recovers from the case where `winget` (or another Windows installer) placed the binary on disk but the Bash tool's PATH does not see it — typically because `%LOCALAPPDATA%\Microsoft\WinGet\Links` is empty or absent from the inherited PATH. Two recovery stages run as one consented chain.
+
+**Inputs:** `dep_name` (`"yt-dlp"` or `"ffmpeg"`), `verify_cmd`. `<PY>` is resolved per SKILL.md Step 0.1 — callers do not pass it explicitly; substitute it inline wherever this routine references it.
+
+**Skip on non-Windows (defense-in-depth).** If `<OS> != Windows`, return `not_found` immediately (no-op). The primary OS guards live at the three call sites (SKILL.md Step 0.3b, Step 0.5, and install-helper.md Step D — each explicitly checks `<OS> == Windows` before invoking Step W). This internal check is intentionally redundant: it protects against a future refactor that adds a fourth call site without the caller-side guard.
+
+**Returns one of:** `recovered` (Stage 1 succeeded, Bash sees the binary) / `staged_for_restart` (Stage 2 succeeded, user must restart Claude Code) / `not_found` (no recovery possible) / `copy_failed` (mechanical copy/registry failure).
+
+> **PowerShell quoting note.** Three quoting layers (Claude Code Bash → cmd.exe wrapper → powershell.exe) make long `-Command` strings fragile. **Preferred primary path:** write the PowerShell script into a temp `.ps1` file (e.g. via Bash heredoc to `$TEMP\yt-extract-recovery-<rand>.ps1`) and execute with `powershell -NoProfile -ExecutionPolicy Bypass -File <tmp>`. Use single-line `-Command` only for trivial calls.
+
+### W.1 — Locate the binary
+
+Run a single PowerShell script that merges User+Machine PATH from the Registry (bypassing the stale Bash PATH), then tries `Get-Command`, with a recursive `Get-ChildItem` fallback under `%LOCALAPPDATA%\Microsoft\WinGet\Packages`. For ffmpeg, search for **both** `ffmpeg.exe` AND `ffprobe.exe` — yt-dlp invokes ffprobe internally for stream selection; copying only ffmpeg.exe yields silent screenshot failures.
+
+```powershell
+$ErrorActionPreference = 'SilentlyContinue'
+$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+$bins = if ('<dep_name>' -eq 'ffmpeg') { @('ffmpeg.exe','ffprobe.exe') } else { @('yt-dlp.exe') }
+foreach ($b in $bins) {
+    $c = Get-Command $b -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source
+    if (-not $c) {
+        $c = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Recurse -Filter $b -ErrorAction SilentlyContinue |
+             Select-Object -First 1 -ExpandProperty FullName
+    }
+    if ($c) { Write-Output "FOUND:$b=$c" } else { Write-Output "MISSING:$b" }
+}
+```
+
+Parse the output. If any required bin returns `MISSING:...`, return `not_found`. Otherwise collect the resolved source paths into `<src_paths>` (a list of full Windows paths). When a later step needs to display the binary filenames to the user (W.3 question, W.6 restart message), derive them inline from `<src_paths>` basenames — do not track a separate filenames list. Examples for the same `<src_paths>`: `yt-dlp.exe` (single binary, yt-dlp) or `ffmpeg.exe + ffprobe.exe` (two binaries, ffmpeg).
+
+### W.2 — Resolve a Stage-1 destination on the current Bash PATH
+
+Resolve both candidates with **one** Python invocation (avoids two process launches):
+
+```bash
+<PY> -c "import sysconfig, os, sys; print(sysconfig.get_paths()['scripts']); print(os.path.dirname(sys.executable))"
+```
+
+Line 1 = pip user-scripts dir. Line 2 = Python install dir (where `python.exe` lives). Try them in that order.
+
+Verify each against the **current** Bash `$PATH`. Bash on Windows (Git Bash) reports PATH in Unix form (`/c/Users/...`); Python returns Windows form (`C:\Users\...`). Convert with `cygpath -u "<winpath>"` before grep'ing the candidate against `$PATH`.
+
+Reject any candidate whose path is below `\WindowsApps\` (MS-Store stub-redirect ACLs reject `Copy-Item`).
+
+Set `<stage1_dest>` to the first verified, non-WindowsApps candidate. If both candidates are rejected, set `<stage1_dest> = null` (Stage 1 unavailable; only Stage 2 is offered in W.3).
+
+### W.3 — Single confirmation gate covering the full recovery chain
+
+Issue **one** `AskUserQuestion`. The `options` are identical in every case; only the recovery-steps clause inside `question` varies based on `<stage1_dest>`. Use this scaffold:
+
+```
+question: "[dep_name] is installed but not visible to this shell yet (winget PATH lag).
+           Recover by [<RECOVERY_STEPS>]?"
+options:
+  - "Yes, do the recovery"
+  - "No, I'll handle it myself"
+```
+
+In every case, `[binaries]` below is the binary filenames extracted as basenames of `<src_paths>` (e.g. `yt-dlp.exe`, or `ffmpeg.exe + ffprobe.exe`).
+
+Substitute `<RECOVERY_STEPS>`:
+
+- **`<stage1_dest> != null` (Stage 1 available):**
+  > 1. copying [binaries] to [stage1_dest] (immediate, no restart), and 2. if that doesn't take effect, copying to `%LOCALAPPDATA%\Microsoft\WinGet\Links` AND adding that directory to your user PATH (Registry; Claude Code restart needed). Step 2 also fixes future winget installs.
+
+- **`<stage1_dest> == null` (Stage 1 unavailable, e.g. MS-Store Python):**
+  > configuring user PATH directly: copying [binaries] to `%LOCALAPPDATA%\Microsoft\WinGet\Links` AND adding that directory to your user PATH (Registry; Claude Code restart required).
+
+On "No" → return `not_found` (caller falls back to its existing flow). On "Yes" with Stage 1 available → proceed to W.4 (and on Stage-1-verify-fail → automatic fallthrough to W.6, no second prompt). On "Yes" with Stage 1 unavailable → jump directly to W.6.
+
+### W.4 — Stage 1: Copy
+
+Run one PowerShell script that iterates over `<src_paths>` from W.1 (one source for yt-dlp, two for ffmpeg). `<stage1_dest>` is Python's Scripts directory, which exists by definition because Step 0.3a verified Python — no `mkdir` needed.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+foreach ($src in @(<src_paths>)) {
+    Copy-Item -LiteralPath $src -Destination '<stage1_dest>' -Force
+}
+```
+
+On non-zero exit → return `copy_failed`.
+
+### W.5 — Stage 1: Re-verify
+
+Run `verify_cmd` via Bash. Exit 0 → return `recovered`. Otherwise → fall through to W.6 automatically (the user already consented to the full chain in W.3 — **no second prompt**). Emit a one-line info message: "Stage-1 copy didn't take effect; falling back to persistent PATH recovery as agreed."
+
+### W.6 — Stage 2: WinGet\Links + persistent user-PATH update
+
+Two operations, both via PowerShell:
+
+**(1) Copy bins to `%LOCALAPPDATA%\Microsoft\WinGet\Links\`.** The Links directory may not exist (this is the original bug's root cause); `New-Item -Force` is idempotent and creates it if missing. Iterate over `<src_paths>` from W.1 — substitute the literal array, e.g. `@('C:\Users\...\yt-dlp.exe')` for yt-dlp, or `@('C:\Users\...\ffmpeg.exe','C:\Users\...\ffprobe.exe')` for ffmpeg.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$links = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'
+New-Item -ItemType Directory -Path $links -Force | Out-Null
+foreach ($src in @(<src_paths>)) {
+    Copy-Item -LiteralPath $src -Destination $links -Force
+}
+```
+
+**(2) Add `<Links>` to the user PATH (Registry), idempotent via exact-token comparison** (substring match would false-positive on e.g. `WinGet\LinksOld`):
+
+```powershell
+$links = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'
+$userPath = [Environment]::GetEnvironmentVariable('Path','User')
+if (($userPath -split ';') -notcontains $links) {
+    $newPath = if ($userPath) { $userPath + ';' + $links } else { $links }
+    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+    Write-Output 'PATH_UPDATED'
+} else {
+    Write-Output 'PATH_ALREADY_PRESENT'
+}
+```
+
+On success → return `staged_for_restart`. The caller emits this restart message and aborts (substitute `[binaries]` with the basenames of `<src_paths>`, e.g. `yt-dlp.exe` or `ffmpeg.exe + ffprobe.exe`):
+
+```
+Recovery configured your user PATH:
+  - Copied [binaries] to %LOCALAPPDATA%\Microsoft\WinGet\Links\
+  - Added that directory to your user PATH (Registry)
+
+Please RESTART Claude Code, then re-run /yt-extract.
+After restart, future winget installs will also work without this recovery step.
+```
+
+On non-zero PowerShell exit → return `copy_failed`.
+
+### Return contract — caller dispatch
+
+| State                 | SKILL.md 0.3b/0.5 pre-check                    | install-helper.md Step D fallback             |
+|-----------------------|-------------------------------------------------|------------------------------------------------|
+| `recovered`           | continue to Step 0.4 (skip install-helper)     | return success to caller                       |
+| `staged_for_restart`  | emit restart message, abort skill              | emit restart message, abort skill              |
+| `not_found`           | invoke install-helper (current behavior)       | proceed to Step E (current behavior)           |
+| `copy_failed`         | invoke install-helper                           | proceed to Step E                              |

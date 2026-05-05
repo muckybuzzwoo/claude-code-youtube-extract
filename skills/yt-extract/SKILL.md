@@ -114,7 +114,13 @@ yt-dlp --version 2>&1
 
 **If yt-dlp is present:** continue to 0.4.
 
-**If yt-dlp is missing:** invoke the **install-dependency helper** (see 0.6) with:
+**If yt-dlp is missing AND `<OS> == Windows`:** before falling through to the install-helper's Steps A0-F, jump directly to **Step W (Windows PATH Recovery)** in `references/install-helper.md` with `dep_name = "yt-dlp"` and `verify_cmd = "yt-dlp --version"`. Dispatch on the return state:
+
+- `recovered` → continue to 0.4 (skip the install-helper entirely — recovers the case where yt-dlp is already installed via winget but Bash cannot see it).
+- `staged_for_restart` → emit Step W's restart message and abort the skill.
+- `not_found` or `copy_failed` → fall through to the install-helper invocation below.
+
+**If yt-dlp is missing (after the Windows pre-check, or on non-Windows):** invoke the **install-dependency helper** (see 0.6) with:
 - `dep_name = "yt-dlp"`
 - `options = yt-dlp install options for <OS>`
 - `doc_url = "https://github.com/yt-dlp/yt-dlp/wiki/Installation"`
@@ -149,7 +155,13 @@ ffmpeg -version 2>&1
 
 **If ffmpeg is present:** continue to Step 1.
 
-**If ffmpeg is missing:** invoke the install-dependency helper (see 0.6) with:
+**If ffmpeg is missing AND `<OS> == Windows`:** before falling through to the install-helper's Steps A0-F, jump directly to **Step W (Windows PATH Recovery)** in `references/install-helper.md` with `dep_name = "ffmpeg"` and `verify_cmd = "ffmpeg -version"`. Dispatch on the return state:
+
+- `recovered` → continue to Step 1 (skip the install-helper entirely; both `ffmpeg.exe` and `ffprobe.exe` are recovered together).
+- `staged_for_restart` → emit Step W's restart message and abort the skill (no `skip_screenshots` fallback in this branch — a half-installed dep is broken, matching Step E semantics).
+- `not_found` or `copy_failed` → fall through to the install-helper invocation below.
+
+**If ffmpeg is missing (after the Windows pre-check, or on non-Windows):** invoke the install-dependency helper (see 0.6) with:
 - `dep_name = "ffmpeg"`
 - `options = ffmpeg install options for <OS>`
 - `doc_url = "https://ffmpeg.org/download.html"`

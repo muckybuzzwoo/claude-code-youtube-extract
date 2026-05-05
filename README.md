@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.4.0-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.5.0-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -27,7 +27,7 @@ Tutorial videos are trapped knowledge. The content is valuable, but it sits behi
 
 | Type  | Name         | Version | Description                                                                 |
 |-------|--------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract` | 1.4.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Skill | `yt-extract` | 1.5.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -72,7 +72,7 @@ git clone https://github.com/muckybuzzwoo/claude-code-youtube-extract.git
 /yt-extract --check
 ```
 
-This runs the dependency check (`yt-dlp`, plus `ffmpeg` if you add `--screenshots`) and triggers the install-on-demand flow when something is missing — without doing any video extraction. On Windows you may need to restart Claude Code once after a winget install (see [Troubleshooting](#troubleshooting)), then re-run `--check`.
+This runs the dependency check (`yt-dlp`, plus `ffmpeg` if you add `--screenshots`) and triggers the install-on-demand flow when something is missing — without doing any video extraction. Since v1.5.0, Windows installs from `winget` are recovered automatically when `winget` does not put the binary on PATH; a Claude Code restart is rarely needed (see [Troubleshooting](#troubleshooting) for the rare last-resort case).
 
 ### 4. Run it
 
@@ -444,13 +444,13 @@ If either dependency is missing when you run `/yt-extract`, the skill detects th
 ## Troubleshooting
 
 ### `"Installation completed but <dep> is still not on PATH"` — Windows
-This is the **expected first-time experience on Windows**. `winget` updates the user PATH, but your current shell keeps its stale PATH until you restart. Close Claude Code, reopen it, and re-run `/yt-extract --check` to verify everything is in place (no video extraction needed). One-time ritual per freshly installed dependency.
+Rare since v1.5.0. The skill's automatic Windows PATH recovery (Step W) normally finds the freshly installed binary in `%LOCALAPPDATA%\Microsoft\WinGet\Packages` and either copies it into Python's Scripts directory (immediate, no restart) or stages it in `WinGet\Links` while adding that directory to the user PATH (Claude Code restart needed once). If you still see this message, recovery could not locate the binary or could not write to a destination on PATH. Restart Claude Code and re-run `/yt-extract --check`; if it persists, install the dependency manually with `pip install yt-dlp` (yt-dlp) or by copying `ffmpeg.exe` and `ffprobe.exe` from `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_*\...\bin\` into a directory on your PATH.
 
 ### `ffmpeg` install hangs or asks for a sudo password — Linux
 The skill probes `sudo -n true` before attempting any sudo install. If you have no active sudo session, the skill aborts safely and prints the exact manual command instead of hanging. Open your terminal, run `sudo apt install -y ffmpeg` (or `dnf`), then re-run `/yt-extract`. To avoid sudo entirely for `yt-dlp`, use `pip install --user yt-dlp` or `pipx install yt-dlp`.
 
 ### `winget install` returns exit code 43
-This means the package is already installed — not an error. As of v1.1.0, Step 0.6.C treats exit 43 the same as exit 0 and proceeds to verify PATH. If the binary is still missing from PATH, see the first troubleshooting entry (shell restart).
+This means the package is already installed — not an error. As of v1.1.0, Step 0.6.C treats exit 43 the same as exit 0 and proceeds to verify PATH. Combined with v1.5.0's PATH recovery, exit 43 now resolves transparently when the binary is present in the WinGet packages directory: Step W locates it and either copies it to Python's Scripts dir (immediate) or stages a permanent PATH entry (one-time restart).
 
 ### No transcript shown
 The video has no subtitles (neither manual nor auto-generated), or the language is not detected by yt-dlp. The analysis continues with metadata, description, and comments; the summary section shows `❌ No transcript available.`
@@ -510,4 +510,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.4.0 — [Changelog](CHANGELOG.md)
+Version: 1.5.0 — [Changelog](CHANGELOG.md)

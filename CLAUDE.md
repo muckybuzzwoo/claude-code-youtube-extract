@@ -16,7 +16,7 @@ subagent per URL for transcript summarization.
 | Skill  | `skills/yt-extract/SKILL.md`  | User-invocable workflow (`/yt-extract`)   |
 | Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT    |
 
-Current version: **1.4.0** — see [CHANGELOG.md](CHANGELOG.md).
+Current version: **1.5.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Architectural conventions
 

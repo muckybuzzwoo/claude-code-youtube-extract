@@ -4,6 +4,36 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-05-05
+
+Windows-only fix for the "freshly installed but not on PATH" UX dead-end. `winget` installs into `%LOCALAPPDATA%\Microsoft\WinGet\Packages` with a shim under `\Microsoft\WinGet\Links\` — when that Links dir is empty or absent from the Bash tool's PATH, `yt-dlp --version` returned exit 127 even though the binary was on disk, and the skill's only response was "restart your terminal". v1.5.0 adds an automatic two-stage PATH-recovery step that locates the binary via merged-registry PATH and copies it into a directory already on the current shell's PATH (Stage 1 — Python's Scripts dir) or, as a fallback, into `WinGet\Links` while permanently adding that directory to the user PATH (Stage 2). One AskUserQuestion confirmation covers the full recovery chain.
+
+### yt-extract skill
+
+#### Added
+- `references/install-helper.md` — new **Step W (Windows PATH Recovery)** with two recovery stages:
+  - **Stage 1** copies the binary to Python's Scripts directory (already on PATH per the Step 0.3a Python check) — works in the current shell session, no Claude Code restart required.
+  - **Stage 2** (auto-fallback when Stage 1 mechanically fails, or sole option when Stage 1 is unavailable, e.g. MS-Store Python) copies the binary to `%LOCALAPPDATA%\Microsoft\WinGet\Links` AND adds that directory to the user PATH via Registry — fixes the winget Links shim permanently for all future winget installs. Requires a Claude Code restart.
+  - Step W locates the binary via PowerShell merged-registry `Get-Command` lookup with `Get-ChildItem` fallback under `%LOCALAPPDATA%\Microsoft\WinGet\Packages`.
+- `SKILL.md` Step 0.3b (yt-dlp) and Step 0.5 (ffmpeg) — Windows pre-check fallback that invokes Step W BEFORE loading the install-helper. On Stage 1 success, the install-helper is skipped entirely (recovers the case where the binary is already on disk via winget but Bash cannot see it).
+- `install-helper.md` Step D — Windows post-install fallback that invokes Step W BEFORE Step E. On Stage 1 success, returns success without "restart your terminal".
+- ffmpeg recovery copies BOTH `ffmpeg.exe` and `ffprobe.exe` — yt-dlp invokes ffprobe internally for stream selection, so copying only `ffmpeg.exe` would yield silent screenshot failures.
+
+#### Fixed
+- Windows + winget yt-dlp / ffmpeg: skill no longer asks the user to install something that is already present on disk (Fall A — empty or absent `WinGet\Links` shim).
+- Windows + fresh winget install: skill no longer aborts with "restart your terminal" for every freshly installed dependency (Fall B). One AskUserQuestion confirmation replaces the restart loop.
+- Combined with the existing winget exit-code-43 normalization (install-helper.md Step C), `winget install yt-dlp` now resolves transparently when the binary is in the WinGet packages dir.
+
+### Docs
+
+#### Changed
+- `README.md` Quick Start and Troubleshooting — rewrote the "expected first-time experience on Windows" guidance. The Claude Code restart is now the rare-case fallback, not the default ritual.
+- `CLAUDE.md` — version reference bumped 1.4.0 → 1.5.0.
+
+#### Known limitations
+- After a future `winget upgrade` of a binary recovered via Stage 1 / Stage 2, the local copy goes stale until a fresh recovery runs. Mitigated by yt-dlp's built-in `-U` self-update; ffmpeg upgrades are rare. `/yt-extract --check` re-triggers recovery whenever needed.
+- MS-Store Python users — both `sysconfig.get_paths()['scripts']` and `os.path.dirname(sys.executable)` resolve under `\WindowsApps\` with stub-redirect ACLs that reject `Copy-Item`. Step W detects this, suppresses Stage 1, and offers Stage 2 only (which writes to `WinGet\Links` and is unaffected by the ACL issue).
+
 ## [1.4.0] — 2026-04-24
 
 Contributor-driven maintenance release. Two merged pull requests split off the install-on-demand helper from `SKILL.md`, refactored the Python script's markdown output into small pure `render_*` functions, and added a pytest-based unit suite for the deterministic helpers. No user-visible behavior changes — the markdown output and sentinel contracts are unchanged. Python 3.8 remains the minimum (the earlier 3.9 bump was reverted because `from __future__ import annotations` makes all generic-builtin annotations lazy).
