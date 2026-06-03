@@ -4,6 +4,25 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-06-03
+
+The skill can now be invoked **programmatically by other skills** via the Skill tool, not only manually via `/yt-extract`. Removing `disable-model-invocation: true` is what unblocks this — the Skill tool cannot reach a skill that declares that flag (per the Claude Code skills docs: "Use `disable-model-invocation: true` to block programmatic invocation"). Because the skill is now model-invocable, its `description` sits in context again, so it was tightened to fire only on an explicit extract/analyze request — replacing the hard flag as the over-trigger guard.
+
+### yt-extract skill
+
+#### Changed
+- `SKILL.md` frontmatter — removed `disable-model-invocation: true`. The skill is now model-invocable and can be called from another skill via the Skill tool as `yt-extract:yt-extract <url> [flags]`. It stays user-invocable via `/yt-extract` (`user-invocable: true` is unchanged).
+- `SKILL.md` `description` — tightened to trigger "only when explicitly asked to extract or analyze specific YouTube URL(s) … do not auto-trigger on incidental YouTube URL mentions or links shared merely as references". This soft guard replaces the hard `disable-model-invocation` block.
+- `SKILL.md` "Extending this skill" line-count-budget note — no longer references the removed flag; the 500-line figure is now described as the soft guideline it is (it was never coupled to `disable-model-invocation`).
+
+#### Behavior change
+- The hard technical block against model-invocation is gone. Whether the skill auto-triggers on a stray YouTube link is now governed by the tightened `description` plus any user-level invocation gating (e.g. CLAUDE.md rules), not by a frontmatter flag. Set `disable-model-invocation: true` again to restore the hard block (at the cost of programmatic invocability).
+
+### Docs
+
+#### Changed
+- Version reference bumped 1.5.0 → 1.6.0 across `CLAUDE.md`, `README.md` (badge, components table, footer), `.claude-plugin/plugin.json`, and `.claude-plugin/marketplace.json`.
+
 ## [1.5.0] — 2026-05-05
 
 Windows-only fix for the "freshly installed but not on PATH" UX dead-end. `winget` installs into `%LOCALAPPDATA%\Microsoft\WinGet\Packages` with a shim under `\Microsoft\WinGet\Links\` — when that Links dir is empty or absent from the Bash tool's PATH, `yt-dlp --version` returned exit 127 even though the binary was on disk, and the skill's only response was "restart your terminal". v1.5.0 adds an automatic two-stage PATH-recovery step that locates the binary via merged-registry PATH and copies it into a directory already on the current shell's PATH (Stage 1 — Python's Scripts dir) or, as a fallback, into `WinGet\Links` while permanently adding that directory to the user PATH (Stage 2). One AskUserQuestion confirmation covers the full recovery chain.

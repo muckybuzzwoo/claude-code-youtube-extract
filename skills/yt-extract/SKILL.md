@@ -1,8 +1,7 @@
 ---
 name: yt-extract
-description: "Extract and analyze YouTube videos — transcript, metadata, screenshots, comments. Use when user says /yt-extract or wants to analyze 1-3 YouTube URLs with optional summary, comments, and screenshot extraction."
+description: "Extract and analyze YouTube videos — transcript, metadata, screenshots, comments. Use only when explicitly asked to extract or analyze specific YouTube URL(s) — via /yt-extract or invoked programmatically from another skill via the Skill tool. Do not auto-trigger on incidental YouTube URL mentions or links shared merely as references."
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "<youtube-url> [url2] [url3] [--screenshots [timestamps]] [--comments] [--full-transcript] [--no-save] | --check [--screenshots]"
 allowed-tools: "Bash, Agent, Write, Read, AskUserQuestion"
 ---
@@ -588,4 +587,4 @@ Contributor reference. End-users never read this section.
 - **Adding a new install target:** update the Step 0.2 matrix AND the matching matrix in `CLAUDE.md`. Every new command must be non-interactive (no license prompts, no sudo password prompts, no stdin reads) — the Bash tool has no stdin channel.
 - **Adding a sentinel or orchestration trailer:** the current registry is `FFMPEG_MISSING`, `SCREENSHOTS_ASK_USER`, `FOLDER_EXISTS:` (stderr, exit 2), and `OUTPUT_FOLDER:` (trailing stdout). Adding a new one requires coordinated changes in the script, both subagent prompts (Step 1), the skill's post-processing (Step 2/3), and the `CLAUDE.md` registry.
 - **Adding a Markdown section:** the script emits a fixed set of `###` headers parsed verbatim by the subagent prompts. Renaming or adding one requires changes on both sides — see the "Section headers" note in `CLAUDE.md`.
-- **Line-count budget:** this skill declares `disable-model-invocation: true`, which relaxes the usual 500-line ceiling. The install-dependency helper already lives in `references/install-helper.md` — prefer extracting other long sub-workflows to `references/` rather than growing this file further.
+- **Line-count budget:** this skill is intentionally long because it documents the full orchestration contract between the skill and `scripts/yt-extract.py`. The 500-line figure in the skills docs is a soft guideline, not a hard limit. The install-dependency helper already lives in `references/install-helper.md` — prefer extracting other long sub-workflows to `references/` rather than growing this file further.
