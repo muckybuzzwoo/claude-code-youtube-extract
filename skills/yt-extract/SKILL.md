@@ -170,8 +170,8 @@ Paste a URL to start. After the first run I'll suggest follow-ups you can chain
 - **Flags were passed but no URL** → short Rückfrage that preserves the chosen flags (substitute the actual flags seen, e.g. `--transcript-only`):
 
 ```
-Got --transcript-only, but no YouTube URL.
-Paste one and I'll run with that:  /yt-extract <url> --transcript-only
+Got [the flags you passed, e.g. --transcript-only], but no YouTube URL.
+Paste one and I'll run with that:  /yt-extract <url> [those flags]
 ```
 
 No `AskUserQuestion`, no step-by-step wizard: the happy path (`/yt-extract <url>`) stays friction-free, and option discovery happens through the post-run "What next?" block. The conversational "you mentioned a video but no URL — which one?" behavior (preserving options the user described in natural language) is orchestrator behavior performed *before* the skill is invoked, not part of this guard.
@@ -297,11 +297,11 @@ then per URL:
 <PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --transcript-only --output-base "./yt-extract_[DATE]_[N]-videos"
 ```
 
-**Stage markers:** the script emits `[1/2] Downloading transcript` and `[2/2] Writing output` on stderr — surface each as a one-line update.
+**Stage markers:** the script emits `[1/2] Downloading transcript` and `[2/2] Writing output` on stderr (N is always 2 in this mode) — surface each as a one-line update.
 
 **FOLDER_EXISTS (exit code 2):** identical handling to the other modes — if a Bash call exits 2 with `FOLDER_EXISTS: <path>` on stderr, ask via AskUserQuestion ("Folder already exists. Overwrite?") and re-run that exact command with `--force` appended.
 
-**Parse `OUTPUT_FOLDER: <path>`** (the last stdout line of each run) to locate each target folder for saving. Trim it from the transcript text before formatting. Then format per Step 2's "Transcript-only output" and save per Step 3.
+**Parse `OUTPUT_FOLDER: <path>`** (the last stdout line of each run) to locate each target folder. Trim it from the transcript text before formatting. Then treat each script's stdout exactly as you would a subagent's returned output: format per Step 2's "Transcript-only output", then run Step 3's saving flow on it. **Step 3 applies even though no subagent ran** — including `--no-save`: the script has already created the target folder, so if `--no-save` was set, ask before writing the `.md` and on decline `rm -rf` the folder(s), exactly as in the other modes.
 
 ---
 
@@ -510,7 +510,7 @@ The Python backend is the source of truth for deterministic formatting. The skil
 
 ### Transcript-only output (when `--transcript-only` is set):
 
-The script emits only `### Transcript Info` and `### Transcript`. Format as:
+The script emits only `### Transcript Info` and `### Transcript`. Derive `[video ID]` from the `OUTPUT_FOLDER` last path segment (the part after `yt-extract_<DATE>_`) — it is the video ID in the normal case, or a `video-<slug>` fallback when the ID could not be parsed from the URL. Format as:
 
 **1 URL:**
 ```
@@ -615,6 +615,7 @@ The Python script creates the per-video folder and any screenshots inside it dir
 
     Or re-run for the full treatment:
     - Drop `--transcript-only` for metadata + a structured summary
+    - Add `--comments` or `--screenshots` for viewer comments or chapter frames
     ```
 
     **Do NOT emit the follow-up invitation in these cases:**

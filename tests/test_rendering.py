@@ -81,6 +81,13 @@ def test_extract_video_id_ignores_trailing_query_params():
     )
 
 
+def test_extract_video_id_live_url():
+    assert (
+        yt_extract.extract_video_id("https://www.youtube.com/live/dQw4w9WgXcQ")
+        == "dQw4w9WgXcQ"
+    )
+
+
 def test_extract_video_id_returns_none_on_no_match():
     assert yt_extract.extract_video_id("https://example.com/not-a-video") is None
 

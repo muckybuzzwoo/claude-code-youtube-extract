@@ -18,7 +18,8 @@ always answers with a guided text message instead of failing.
 
 #### Added
 - `extract_video_id(url)` — parses the 11-char YouTube video ID from `watch?v=`,
-  `youtu.be/`, `/shorts/`, and `/embed/` URL forms; returns `None` on no match.
+  `youtu.be/`, `/shorts/`, `/embed/`, and `/live/` URL forms; returns `None` on
+  no match.
 - `run_transcript_only(args)` — lean path that skips metadata, comments, and
   screenshots, emits only `### Transcript Info` + `### Transcript`, and reuses
   the existing `FOLDER_EXISTS` / `OUTPUT_FOLDER` contract.

@@ -54,11 +54,11 @@ def slugify(text: str, max_length: int = 50) -> str:
 
 def extract_video_id(url: str) -> str | None:
     """Extract the 11-char YouTube video ID from common URL forms
-    (``watch?v=``, ``youtu.be/``, ``/shorts/``, ``/embed/``). Returns None on
-    no match. Used by --transcript-only mode to name the output folder
-    without paying for a metadata fetch.
+    (``watch?v=``, ``youtu.be/``, ``/shorts/``, ``/embed/``, ``/live/``).
+    Returns None on no match. Used by --transcript-only mode to name the
+    output folder without paying for a metadata fetch.
     """
-    m = re.search(r"(?:v=|/shorts/|/embed/|youtu\.be/)([A-Za-z0-9_-]{11})", url)
+    m = re.search(r"(?:v=|/shorts/|/embed/|/live/|youtu\.be/)([A-Za-z0-9_-]{11})", url)
     return m.group(1) if m else None
 
 
@@ -725,27 +725,35 @@ def run_transcript_only(args: argparse.Namespace) -> None:
     url = args.url
     total_stages = 2
 
-    emit_stage(1, total_stages, "Downloading transcript")
     video_id = extract_video_id(url)
     slug = video_id or ("video-" + slugify(url, 40))
 
     date_str = datetime.date.today().isoformat()
     target = os.path.join(args.output_base, f"yt-extract_{date_str}_{slug}")
 
+    # Collision guard before any work — so a re-run without --force does not
+    # emit a stage marker for work it never starts.
     if os.path.isdir(target) and not args.force:
         print(f"FOLDER_EXISTS: {target}", file=sys.stderr, flush=True)
         sys.exit(2)
     os.makedirs(target, exist_ok=True)
 
-    transcript, sub_hint, segments = download_and_process_vtt(url, video_id or "ytx")
+    emit_stage(1, total_stages, "Downloading transcript")
+    # Pass `slug` (not a fixed literal) as the temp-file discriminator so the
+    # VTT temp prefix stays unique per video even when extract_video_id misses.
+    transcript, sub_hint, segments = download_and_process_vtt(url, slug)
 
     emit_stage(2, total_stages, "Writing output")
     sections = [
+        # duration is unknown in transcript-only mode (no metadata fetch), so
+        # pass 0 — render_transcript_info deliberately omits the long-video hint.
         render_transcript_info(sub_hint, 0),
         render_transcript(transcript, segments, [], []),
     ]
     print("\n".join(section for section in sections if section))
 
+    # Deliberate blank line: OUTPUT_FOLDER: must be the last non-empty stdout
+    # line so the skill can parse it.
     print()
     print(f"OUTPUT_FOLDER: {target.replace(os.sep, '/')}")
 
