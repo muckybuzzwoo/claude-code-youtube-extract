@@ -675,7 +675,7 @@ videos:
 - **Scene detection finds nothing above threshold:** the run still succeeds with the opening frame only; `### Screenshot Status` carries a WARNING suggesting a lower threshold (e.g. `scenes=0.01`).
 - **Scene detection finds too many changes (>50 after the 4s min-gap):** evenly thinned to 50; WARNING in `### Screenshot Status` suggests a higher threshold (e.g. `scenes=0.05`).
 - **Scene-detection pass runs long:** it decodes the whole video at low resolution — minutes on long videos. The `Detecting scene changes` stage marker covers the silence; the script enforces a duration-scaled timeout (max 30 min).
-- **Scene-detection stream stall/timeout:** WARNING in `### Screenshot Status`, run completes with 0 screenshots — suggest re-running with `--screenshots chapters` or explicit timestamps.
+- **Scene-detection stream stall/timeout:** WARNING in `### Screenshot Status`, run completes with 0 screenshots — suggest re-running with `--screenshots chapters` or explicit timestamps. An HTTP 403 (transiently invalidated stream URL) is retried once automatically with a fresh URL before the script gives up.
 - **Timestamp outside video duration:** skipped by the Python script with a WARNING, no interruption
 - **Stream URL expired:** if ffmpeg reports a stale/expired stream URL (HTTP 403 or similar during screenshot extraction), re-run the script once — yt-dlp fetches a fresh URL on each invocation. Surface the retry to the user as a one-line status.
 - **Target folder already exists:** script exits 2 with `FOLDER_EXISTS: <path>` on stderr → subagent prompts the user via AskUserQuestion and re-runs with `--force` on confirmation. Multi-URL parent-folder collisions are handled by the skill itself before dispatch (see Step 1).

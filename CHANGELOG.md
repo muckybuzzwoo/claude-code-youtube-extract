@@ -44,6 +44,12 @@ videos, where slides change far more often than chapter markers suggest.
   truncated seek could land *before* the detected change and capture the
   previous screen. Side effect: explicit fractional timestamps like `1:30.5`
   now seek accurately instead of silently flooring to `1:30`.
+- Scene detection retries once with a freshly fetched stream URL when ffmpeg
+  reports HTTP 403 — YouTube occasionally invalidates stream URLs right after
+  issuing them (observed in release testing); a fresh yt-dlp fetch resolves
+  it. Mirrors the documented "stream URL expired" re-run convention for
+  extraction. *(Post-tag fix on the 1.8 line — pushed to `main` after the
+  `v1.8.0` tag, no version bump.)*
 
 ### yt-extract skill
 

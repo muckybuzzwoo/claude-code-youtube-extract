@@ -615,43 +615,61 @@ def detect_scene_timestamps(
     written here — extraction happens via extract_screenshots() at <=1080p.
 
     Returns [] on any failure (caller renders the run with 0 screenshots and
-    the warning explains why). Each timestamp gets SCENE_SEEK_OFFSET added so
-    the later seek lands on the settled new screen, clamped to duration. 0.0
-    is prepended so the opening screen is always captured; apply_min_gap()
-    collapses it with an early first detection.
+    the warning explains why). A pass that fails with HTTP 403 is retried
+    exactly once with a freshly fetched stream URL — YouTube occasionally
+    invalidates stream URLs right after issuing them; a fresh yt-dlp fetch
+    resolves it (same convention as the documented "stream URL expired"
+    edge case for extraction). Each timestamp gets SCENE_SEEK_OFFSET added
+    so the later seek lands on the settled new screen, clamped to duration.
+    0.0 is prepended so the opening screen is always captured;
+    apply_min_gap() collapses it with an early first detection.
     """
-    stream_url = get_lowres_stream_url(url)
-    if not stream_url:
-        msg = "Could not fetch low-res stream URL for scene detection."
-        warnings.append(msg)
-        print(f"ERROR: {msg}", file=sys.stderr)
-        return []
-
-    cmd = [
-        "ffmpeg",
-        "-hide_banner", "-loglevel", "error",
-        "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
-        "-i", stream_url,
-        "-an",
-        "-vf", f"select='gt(scene,{threshold})',metadata=print:file=-",
-        "-f", "null", "-",
-    ]
     # Detection decodes the whole video; 360p runs several-x realtime, so
     # wall-clock ~= duration is a generous ceiling. Floor 300s, cap 30 min.
     timeout = min(1800, max(300, int(duration or 0)))
 
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        msg = (
-            f"Scene detection timed out (>{timeout}s) — re-run with "
-            "`--screenshots chapters` or explicit timestamps."
-        )
-        warnings.append(msg)
-        print(f"WARNING: {msg}", file=sys.stderr)
-        return []
+    proc = None
+    for attempt in (1, 2):
+        # Fetch inside the loop: the retry's whole point is a FRESH URL.
+        stream_url = get_lowres_stream_url(url)
+        if not stream_url:
+            msg = "Could not fetch low-res stream URL for scene detection."
+            warnings.append(msg)
+            print(f"ERROR: {msg}", file=sys.stderr)
+            return []
 
-    if proc.returncode != 0:
+        cmd = [
+            "ffmpeg",
+            "-hide_banner", "-loglevel", "error",
+            "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+            "-i", stream_url,
+            "-an",
+            "-vf", f"select='gt(scene,{threshold})',metadata=print:file=-",
+            "-f", "null", "-",
+        ]
+
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            msg = (
+                f"Scene detection timed out (>{timeout}s) — re-run with "
+                "`--screenshots chapters` or explicit timestamps."
+            )
+            warnings.append(msg)
+            print(f"WARNING: {msg}", file=sys.stderr)
+            return []
+
+        if proc.returncode == 0:
+            break
+
+        if attempt == 1 and "403" in (proc.stderr or ""):
+            print(
+                "WARNING: Scene detection got HTTP 403 — retrying once with "
+                "a fresh stream URL",
+                file=sys.stderr,
+            )
+            continue
+
         err = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "unknown error"
         msg = f"Scene detection failed: {err}"
         warnings.append(msg)
