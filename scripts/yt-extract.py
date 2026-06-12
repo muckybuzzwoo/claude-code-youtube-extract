@@ -717,6 +717,39 @@ def embed_screenshots_in_transcript(
 # --- Main ---
 
 
+def run_transcript_only(args: argparse.Namespace) -> None:
+    """Lean path: fetch and emit ONLY the raw transcript. No metadata fetch,
+    no comments, no screenshots, no summary. Names the output folder by the
+    video ID parsed from the URL (falls back to a URL-derived slug).
+    """
+    url = args.url
+    total_stages = 2
+
+    emit_stage(1, total_stages, "Downloading transcript")
+    video_id = extract_video_id(url)
+    slug = video_id or ("video-" + slugify(url, 40))
+
+    date_str = datetime.date.today().isoformat()
+    target = os.path.join(args.output_base, f"yt-extract_{date_str}_{slug}")
+
+    if os.path.isdir(target) and not args.force:
+        print(f"FOLDER_EXISTS: {target}", file=sys.stderr, flush=True)
+        sys.exit(2)
+    os.makedirs(target, exist_ok=True)
+
+    transcript, sub_hint, segments = download_and_process_vtt(url, video_id or "ytx")
+
+    emit_stage(2, total_stages, "Writing output")
+    sections = [
+        render_transcript_info(sub_hint, 0),
+        render_transcript(transcript, segments, [], []),
+    ]
+    print("\n".join(section for section in sections if section))
+
+    print()
+    print(f"OUTPUT_FOLDER: {target.replace(os.sep, '/')}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Extract YouTube video data")
     parser.add_argument("url", help="YouTube URL")
@@ -737,7 +770,17 @@ def main():
              "exits with code 2 + 'FOLDER_EXISTS: <path>' on stderr when the "
              "target already exists.",
     )
+    parser.add_argument(
+        "--transcript-only", action="store_true",
+        help="Fetch and output ONLY the raw transcript — no metadata, "
+             "description, chapters, comments, or screenshots. Skips the "
+             "metadata fetch; names the output folder by video ID.",
+    )
     args = parser.parse_args()
+
+    if args.transcript_only:
+        run_transcript_only(args)
+        return
 
     url = args.url
 
