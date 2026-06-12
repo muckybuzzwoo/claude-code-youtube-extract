@@ -4,6 +4,60 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-06-12
+
+New lean `--transcript-only` mode: fetch and output just the raw transcript, no
+metadata/description/chapters/comments/screenshots and no summary. It runs the
+Python script **directly** (no subagent) because a subagent would only relay the
+raw transcript back into context, paying its token cost twice. It also skips the
+heavy `yt-dlp --dump-json` metadata call entirely, deriving the output folder
+name from the video ID parsed out of the URL. Plus: a no-URL invocation now
+always answers with a guided text message instead of failing.
+
+### yt-extract.py (backend)
+
+#### Added
+- `extract_video_id(url)` — parses the 11-char YouTube video ID from `watch?v=`,
+  `youtu.be/`, `/shorts/`, and `/embed/` URL forms; returns `None` on no match.
+- `run_transcript_only(args)` — lean path that skips metadata, comments, and
+  screenshots, emits only `### Transcript Info` + `### Transcript`, and reuses
+  the existing `FOLDER_EXISTS` / `OUTPUT_FOLDER` contract.
+- `--transcript-only` CLI flag — branches `main()` to `run_transcript_only()`
+  right after argument parsing.
+
+### yt-extract skill
+
+#### Added
+- `--transcript-only` flag (Step 0.4). When set, the skill runs the script
+  directly per URL (parallel Bash calls for 2–3 URLs) with no subagent dispatch,
+  emits a raw-transcript-only output format (no synthesis for multi-URL), and the
+  "What next?" block offers an in-context summary as a follow-up instead of a
+  separate summarized mode.
+- No-URL handling (Step 0.4.a): when `/yt-extract` is reached with no URL (and
+  without `--check`), it always answers with a plain-text message instead of
+  failing — the full guided help when no flags were given, or a short "paste a
+  URL" Rückfrage that preserves already-chosen flags. Never an `AskUserQuestion`,
+  so it is safe in programmatic skill-to-skill calls.
+
+#### Notes
+- The happy path is unchanged: `/yt-extract <url>` still runs the default
+  structured summary immediately; option discovery stays in the post-run "What
+  next?" block (no upfront question wizard).
+- `--transcript-only` reuses the existing `yt-extract_<DATE>_<slug>/` folder
+  scheme (slug = video ID) — no folder-layout change, no migration needed.
+
+### Docs
+
+#### Changed
+- Version reference bumped 1.6.0 → 1.7.0 across `CLAUDE.md`, `README.md` (badge,
+  components table, footer), `.claude-plugin/plugin.json`, and
+  `.claude-plugin/marketplace.json`.
+- `README.md` — new Features bullet, Usage & Flags row, and example for
+  `--transcript-only`.
+- `CLAUDE.md` — `--transcript-only` documented in the Script CLI section.
+
+- @mucky
+
 ## [1.6.0] — 2026-06-03
 
 The skill can now be invoked **programmatically by other skills** via the Skill tool, not only manually via `/yt-extract`. Removing `disable-model-invocation: true` is what unblocks this — the Skill tool cannot reach a skill that declares that flag (per the Claude Code skills docs: "Use `disable-model-invocation: true` to block programmatic invocation"). Because the skill is now model-invocable, its `description` sits in context again, so it was tightened to fire only on an explicit extract/analyze request — replacing the hard flag as the over-trigger guard.

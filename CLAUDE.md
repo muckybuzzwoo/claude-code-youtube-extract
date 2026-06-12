@@ -16,7 +16,7 @@ subagent per URL for transcript summarization.
 | Skill  | `skills/yt-extract/SKILL.md`  | User-invocable workflow (`/yt-extract`)   |
 | Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT    |
 
-Current version: **1.6.0** — see [CHANGELOG.md](CHANGELOG.md).
+Current version: **1.7.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Architectural conventions
 
@@ -41,7 +41,7 @@ The skill always passes these flags on dispatch — users never type them direct
 | `--output-base <d>` | Base directory. Script creates `<d>/yt-extract_<DATE>_<slug>/`. Default: `.` (CWD).                 |
 | `--force`           | Overwrite an existing target folder. Without it, script exits `2` with `FOLDER_EXISTS:` on stderr.  |
 
-User-facing flags (`--comments`, `--screenshots [timestamps]`, `--full-transcript`, `--no-save`, `--check`) are parsed by the skill in Step 0.4, translated to their script equivalents where relevant, and passed down.
+User-facing flags (`--comments`, `--screenshots [timestamps]`, `--full-transcript`, `--transcript-only`, `--no-save`, `--check`) are parsed by the skill in Step 0.4, translated to their script equivalents where relevant, and passed down. `--transcript-only` is also a script flag: it makes the script skip the metadata fetch, comments, and screenshots and emit only the `### Transcript Info` + `### Transcript` sections; the skill runs it directly (no subagent) and names the output folder by video ID.
 
 ## Out-of-scope changes
 

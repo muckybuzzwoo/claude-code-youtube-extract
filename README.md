@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.6.0-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.7.0-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -27,7 +27,7 @@ Tutorial videos are trapped knowledge. The content is valuable, but it sits behi
 
 | Type  | Name         | Version | Description                                                                 |
 |-------|--------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract` | 1.6.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Skill | `yt-extract` | 1.7.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -35,6 +35,7 @@ This plugin has no dependencies on other Claude Code plugins.
 
 - 📝 **Structured summary** — Key thesis, main points, tools & resources, quotes & numbers
 - 📄 **Full transcript** — Raw text with preserved chapter markers (opt-in via `--full-transcript`)
+- 📃 **Transcript-only** — Just the raw transcript, fast — no summary, metadata, or extras (opt-in via `--transcript-only`); runs without a subagent
 - 🏷️ **Metadata** — Title, channel, upload date, duration, view/like counts, chapters
 - 🔎 **Filtered description** — Subscribe/social boilerplate stripped, tool links preserved
 - 📸 **Screenshots** — Frames at chapter markers or custom timestamps, embedded in transcript (opt-in via `--screenshots`)
@@ -93,6 +94,7 @@ If you skipped step 3, the first real run will offer to install any missing depe
 | *(none)* | Metadata + description + structured summary + auto-save |
 | `--comments` | Also fetch the top 10 comments |
 | `--full-transcript` | Return the raw transcript instead of a summary |
+| `--transcript-only` | Output only the raw transcript — no metadata, summary, comments, or screenshots; no subagent. Folder/file named by video ID. |
 | `--screenshots` | Extract screenshots at chapter markers (requires ffmpeg) |
 | `--screenshots 0:30,2:15,5:00` | Extract screenshots at custom timestamps |
 | `--no-save` | Skip auto-save; ask before writing to disk |
@@ -113,6 +115,9 @@ If you skipped step 3, the first real run will offer to install any missing depe
 
 # Full raw transcript with custom screenshot timestamps
 /yt-extract https://youtu.be/abc123 --full-transcript --screenshots 1:30,5:00,12:45
+
+# Just the raw transcript, fast — no summary, no metadata fetch
+/yt-extract https://youtu.be/abc123 --transcript-only
 
 # Compare 3 videos on the same topic
 /yt-extract https://youtu.be/a https://youtu.be/b https://youtu.be/c --comments
@@ -510,4 +515,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.6.0 — [Changelog](CHANGELOG.md)
+Version: 1.7.0 — [Changelog](CHANGELOG.md)
