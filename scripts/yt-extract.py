@@ -52,6 +52,16 @@ def slugify(text: str, max_length: int = 50) -> str:
     return text[:max_length].rstrip("-")
 
 
+def extract_video_id(url: str) -> str | None:
+    """Extract the 11-char YouTube video ID from common URL forms
+    (``watch?v=``, ``youtu.be/``, ``/shorts/``, ``/embed/``). Returns None on
+    no match. Used by --transcript-only mode to name the output folder
+    without paying for a metadata fetch.
+    """
+    m = re.search(r"(?:v=|/shorts/|/embed/|youtu\.be/)([A-Za-z0-9_-]{11})", url)
+    return m.group(1) if m else None
+
+
 def emit_stage(current: int, total: int, text: str) -> None:
     """Emit a progress stage marker on stderr, flushed immediately."""
     print(f"[{current}/{total}] {text}", file=sys.stderr, flush=True)
