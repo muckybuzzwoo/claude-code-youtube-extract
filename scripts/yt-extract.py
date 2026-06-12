@@ -29,6 +29,12 @@ if sys.platform == "win32":
 
 TMPDIR = tempfile.gettempdir()
 
+# Scene-detection defaults (select filter scene score, range 0..1)
+DEFAULT_SCENE_THRESHOLD = 0.025
+SCENE_MIN_GAP_SECONDS = 4.0
+SCENE_MAX_SCREENSHOTS = 50
+SCENE_SEEK_OFFSET = 0.5  # settle offset past the detected change (fades)
+
 
 def run_ytdlp(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -464,6 +470,66 @@ def check_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+def parse_screenshots_mode(arg: str) -> tuple[str, float | None]:
+    """Classify the --screenshots argument value.
+
+    Returns (mode, threshold):
+    - 'scenes'              -> ('scenes', DEFAULT_SCENE_THRESHOLD)
+    - 'scenes=0.05'         -> ('scenes', 0.05) — raises ValueError outside (0, 1]
+    - 'chapters' / 'auto'   -> ('chapters', None) — 'auto' was the pre-1.8.0
+      const value; keeping the alias preserves old behavior for any direct
+      caller still passing it.
+    - anything else         -> ('timestamps', None), raw arg flows into the
+      existing comma-separated parser.
+    """
+    if arg in ("chapters", "auto"):
+        return ("chapters", None)
+    if arg == "scenes":
+        return ("scenes", DEFAULT_SCENE_THRESHOLD)
+    if arg.startswith("scenes="):
+        threshold = float(arg.split("=", 1)[1])  # ValueError on non-float
+        if not 0 < threshold <= 1:
+            raise ValueError(f"Scene threshold must be in (0, 1], got {threshold}")
+        return ("scenes", threshold)
+    return ("timestamps", None)
+
+
+def parse_scene_timestamps(ffmpeg_output: str) -> list[float]:
+    """Extract pts_time values from ffmpeg ``metadata=print:file=-`` output.
+
+    Expected line shape (verified against ffmpeg output):
+        frame:0    pts:1024    pts_time:0.0666667
+        lavfi.scene_score=0.090931
+    pts_time may lack a decimal part (``pts_time:1``). Everything that does
+    not match is ignored, so format drift degrades to fewer matches, not a
+    crash.
+    """
+    return sorted(
+        float(m.group(1))
+        for m in re.finditer(r"pts_time:(\d+(?:\.\d+)?)", ffmpeg_output)
+    )
+
+
+def apply_min_gap(timestamps: list[float], min_gap: float = SCENE_MIN_GAP_SECONDS) -> list[float]:
+    """Drop timestamps closer than min_gap to the last kept one (keeps the
+    first of each cluster). Input is sorted defensively."""
+    kept: list[float] = []
+    for ts in sorted(timestamps):
+        if not kept or ts - kept[-1] >= min_gap:
+            kept.append(ts)
+    return kept
+
+
+def thin_evenly(timestamps: list[float], max_count: int = SCENE_MAX_SCREENSHOTS) -> list[float]:
+    """Reduce to max_count entries by even index sampling, preserving the
+    first and last timestamp. Returns the list unchanged when small enough."""
+    n = len(timestamps)
+    if n <= max_count:
+        return timestamps
+    indices = {round(i * (n - 1) / (max_count - 1)) for i in range(max_count)}
+    return [timestamps[i] for i in sorted(indices)]
+
+
 def get_chapter_for_timestamp(timestamp: float, chapters: list[dict]) -> str | None:
     """Find chapter title for a given timestamp."""
     for ch in chapters:
@@ -476,11 +542,12 @@ def resolve_timestamps(
     screenshots_arg: str, chapters: list[dict], duration: float,
     warnings: list[str],
 ) -> list[float] | str:
-    """Determine which timestamps to screenshot.
-    Returns list of seconds, or 'ASK_USER' if auto mode but no chapters.
+    """Determine which timestamps to screenshot (chapters or explicit list).
+    Returns list of seconds, or 'ASK_USER' if chapters mode but the video has
+    no chapters. Scene mode never enters this function.
     Appends any issues to warnings list.
     """
-    if screenshots_arg == "auto":
+    if screenshots_arg in ("chapters", "auto"):
         if chapters:
             # Validate chapter timestamps against duration
             return [
@@ -523,6 +590,82 @@ def get_stream_url(url: str) -> str | None:
     return lines[0] if lines else None
 
 
+def get_lowres_stream_url(url: str) -> str | None:
+    """Get a low-resolution (<=360p) direct stream URL for the scene-detection
+    pass. Detection decodes every frame, so bandwidth matters; the final
+    screenshots are still extracted from the <=1080p stream."""
+    result = run_ytdlp([
+        "-g", "-f", "best[height<=360]/best",
+        "--no-playlist", "--no-warnings", url,
+    ])
+    if result.returncode != 0:
+        return None
+    lines = result.stdout.strip().split("\n")
+    return lines[0] if lines else None
+
+
+def detect_scene_timestamps(
+    url: str,
+    threshold: float,
+    duration: float,
+    warnings: list[str],
+) -> list[float]:
+    """Pass 1 of scene mode: decode the low-res stream once and return the
+    timestamps where ffmpeg's scene score exceeds threshold. Frames are NOT
+    written here — extraction happens via extract_screenshots() at <=1080p.
+
+    Returns [] on any failure (caller renders the run with 0 screenshots and
+    the warning explains why). Each timestamp gets SCENE_SEEK_OFFSET added so
+    the later seek lands on the settled new screen, clamped to duration. 0.0
+    is prepended so the opening screen is always captured; apply_min_gap()
+    collapses it with an early first detection.
+    """
+    stream_url = get_lowres_stream_url(url)
+    if not stream_url:
+        msg = "Could not fetch low-res stream URL for scene detection."
+        warnings.append(msg)
+        print(f"ERROR: {msg}", file=sys.stderr)
+        return []
+
+    cmd = [
+        "ffmpeg",
+        "-hide_banner", "-loglevel", "error",
+        "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+        "-i", stream_url,
+        "-an",
+        "-vf", f"select='gt(scene,{threshold})',metadata=print:file=-",
+        "-f", "null", "-",
+    ]
+    # Detection decodes the whole video; 360p runs several-x realtime, so
+    # wall-clock ~= duration is a generous ceiling. Floor 300s, cap 30 min.
+    timeout = min(1800, max(300, int(duration or 0)))
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        msg = (
+            f"Scene detection timed out (>{timeout}s) — re-run with "
+            "`--screenshots chapters` or explicit timestamps."
+        )
+        warnings.append(msg)
+        print(f"WARNING: {msg}", file=sys.stderr)
+        return []
+
+    if proc.returncode != 0:
+        err = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "unknown error"
+        msg = f"Scene detection failed: {err}"
+        warnings.append(msg)
+        print(f"WARNING: {msg}", file=sys.stderr)
+        return []
+
+    detected = parse_scene_timestamps(proc.stdout)
+    offset_applied = [
+        min(duration, ts + SCENE_SEEK_OFFSET) if duration else ts + SCENE_SEEK_OFFSET
+        for ts in detected
+    ]
+    return [0.0] + offset_applied
+
+
 def extract_screenshots(
     url: str,
     timestamps: list[float],
@@ -558,11 +701,13 @@ def extract_screenshots(
 
         filepath = os.path.join(out_dir, filename)
 
-        # -y -loglevel BEFORE -ss; -ss BEFORE -i for fast input seeking
+        # -y -loglevel BEFORE -ss; -ss BEFORE -i for fast input seeking.
+        # Decimal seconds: truncating to int could seek BEFORE a detected
+        # scene change and capture the previous screen.
         cmd = [
             "ffmpeg",
             "-y", "-loglevel", "error",
-            "-ss", str(int(ts)),
+            "-ss", f"{ts:.2f}",
             "-i", stream_url,
             "-frames:v", "1",
             filepath,
@@ -763,9 +908,11 @@ def main():
     parser.add_argument("url", help="YouTube URL")
     parser.add_argument("--comments", action="store_true", help="Also fetch top comments")
     parser.add_argument(
-        "--screenshots", nargs="?", const="auto", default=None,
-        help="Extract screenshots. Without value: use chapter markers. "
-             "With comma-separated timestamps: 0:30,2:15,5:00",
+        "--screenshots", nargs="?", const="scenes", default=None,
+        help="Extract screenshots. Without value: ffmpeg scene detection "
+             "(default threshold 0.025). 'scenes=0.05': custom threshold. "
+             "'chapters': chapter markers. Comma-separated timestamps: "
+             "0:30,2:15,5:00",
     )
     parser.add_argument(
         "--output-base", default=".",
@@ -792,11 +939,29 @@ def main():
 
     url = args.url
 
+    # --- Screenshot mode (parsed early — affects the stage count) ---
+    screenshot_warnings: list[str] = []
+    ss_mode: str | None = None
+    ss_threshold: float | None = None
+    if args.screenshots is not None:
+        try:
+            ss_mode, ss_threshold = parse_screenshots_mode(args.screenshots)
+        except ValueError:
+            ss_mode, ss_threshold = "scenes", DEFAULT_SCENE_THRESHOLD
+            msg = (
+                f"Invalid scene threshold in '{args.screenshots}' — "
+                f"using default {DEFAULT_SCENE_THRESHOLD}."
+            )
+            screenshot_warnings.append(msg)
+            print(f"WARNING: {msg}", file=sys.stderr)
+
     # --- Stage count (adaptive to enabled features) ---
     stages = ["metadata", "transcript"]
     if args.comments:
         stages.append("comments")
     if args.screenshots is not None:
+        if ss_mode == "scenes":
+            stages.append("scene-detection")
         stages.append("screenshots")
     stages.append("output")
     total_stages = len(stages)
@@ -835,21 +1000,48 @@ def main():
         comments = fetch_comments(url)
 
     # --- Step 4: Screenshots (optional) ---
+    # screenshot_warnings was hoisted above the stage computation so the
+    # threshold-parse fallback has a place to report.
     screenshots = []
-    screenshot_warnings: list[str] = []
     screenshot_requested = 0
     screenshot_marker = ""  # "FFMPEG_MISSING" or "SCREENSHOTS_ASK_USER"
     if args.screenshots is not None:
-        stage_idx += 1
         if not check_ffmpeg():
+            # Consume the reserved stage slot(s) so the final marker stays [N/N]
+            stage_idx += 2 if ss_mode == "scenes" else 1
             screenshot_marker = "FFMPEG_MISSING"
             screenshot_warnings.append("ffmpeg not found — no screenshots extracted.")
             emit_stage(stage_idx, total_stages, "Screenshots skipped (ffmpeg missing)")
         else:
-            timestamps = resolve_timestamps(
-                args.screenshots, meta["chapters"], meta["duration"],
-                screenshot_warnings,
-            )
+            if ss_mode == "scenes":
+                stage_idx += 1
+                emit_stage(stage_idx, total_stages, "Detecting scene changes")
+                detected = detect_scene_timestamps(
+                    url, ss_threshold, meta["duration"], screenshot_warnings,
+                )
+                gapped = apply_min_gap(detected)
+                timestamps = thin_evenly(gapped)
+                if len(gapped) > SCENE_MAX_SCREENSHOTS:
+                    screenshot_warnings.append(
+                        f"{len(gapped)} scene changes detected — thinned evenly "
+                        f"to {SCENE_MAX_SCREENSHOTS}. Raise the threshold for "
+                        f"fewer captures (e.g. --screenshots scenes=0.05)."
+                    )
+                # Success always yields the prepended 0.0, so a single entry
+                # means nothing scored above the threshold.
+                if detected and len(timestamps) == 1:
+                    screenshot_warnings.append(
+                        f"No scene changes detected above threshold "
+                        f"{ss_threshold} — captured the opening frame only. "
+                        f"Try a lower threshold (e.g. --screenshots "
+                        f"scenes=0.01) or explicit timestamps."
+                    )
+            else:
+                timestamps = resolve_timestamps(
+                    args.screenshots, meta["chapters"], meta["duration"],
+                    screenshot_warnings,
+                )
+            stage_idx += 1
             if timestamps == "ASK_USER":
                 screenshot_marker = "SCREENSHOTS_ASK_USER"
                 emit_stage(stage_idx, total_stages, "Screenshots deferred (no chapters)")
