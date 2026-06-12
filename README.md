@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.7.0-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.8.0-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -21,13 +21,13 @@
 
 Tutorial videos are trapped knowledge. The content is valuable, but it sits behind 30 minutes of playback — no searchable text, no copy-paste. You watch once, forget half, and can't easily cite or reuse what you heard.
 
-`yt-extract` pulls the full value out of a YouTube video in one command: structured metadata, a filtered description, the complete transcript (summarized or raw), the top comments, and — if you want — screenshots at chapter markers. Everything lands in a dated folder as a single Markdown file you can search, cite, or feed back into Claude.
+`yt-extract` pulls the full value out of a YouTube video in one command: structured metadata, a filtered description, the complete transcript (summarized or raw), the top comments, and — if you want — screenshots at scene changes, chapter markers, or custom timestamps. Everything lands in a dated folder as a single Markdown file you can search, cite, or feed back into Claude.
 
 ## Components
 
 | Type  | Name         | Version | Description                                                                 |
 |-------|--------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract` | 1.7.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Skill | `yt-extract` | 1.8.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -38,7 +38,7 @@ This plugin has no dependencies on other Claude Code plugins.
 - 📃 **Transcript-only** — Just the raw transcript, fast — no summary, metadata, or extras (opt-in via `--transcript-only`); runs without a subagent
 - 🏷️ **Metadata** — Title, channel, upload date, duration, view/like counts, chapters
 - 🔎 **Filtered description** — Subscribe/social boilerplate stripped, tool links preserved
-- 📸 **Screenshots** — Frames at chapter markers or custom timestamps, embedded in transcript (opt-in via `--screenshots`)
+- 📸 **Screenshots** — Frames at scene changes (default — every slide/screen change, ideal for tutorials), chapter markers, or custom timestamps, embedded in transcript (opt-in via `--screenshots`)
 - 💬 **Comments** — Top 10 comments sorted by likes (opt-in via `--comments`)
 - 🎞️ **Multi-video mode** — 2-3 URLs in one call, with a synthesis section across all videos
 - 💾 **Auto-save** — Dated folder with Markdown file, YAML frontmatter, organized screenshots
@@ -95,8 +95,12 @@ If you skipped step 3, the first real run will offer to install any missing depe
 | `--comments` | Also fetch the top 10 comments |
 | `--full-transcript` | Return the raw transcript instead of a summary |
 | `--transcript-only` | Output only the raw transcript — no metadata, summary, comments, or screenshots; no subagent. Folder/file named by video ID. |
-| `--screenshots` | Extract screenshots at chapter markers (requires ffmpeg) |
+| `--screenshots` | Extract screenshots at **scene changes** via ffmpeg scene detection — captures every slide/screen change, ideal for tutorials. Works without chapter markers (requires ffmpeg) |
+| `--screenshots scenes=0.05` | Scene detection with a custom threshold (default `0.025`; higher = fewer captures) |
+| `--screenshots chapters` | Extract screenshots at chapter markers (the pre-1.8.0 default) |
 | `--screenshots 0:30,2:15,5:00` | Extract screenshots at custom timestamps |
+
+> **⚠ Breaking change in 1.8.0:** bare `--screenshots` used to mean chapter markers. It now means scene detection — pass `--screenshots chapters` to restore the old behavior. Scene detection caps output at 50 screenshots (4 s minimum gap, even thinning beyond that) and notes it in `## Screenshot Status`.
 | `--no-save` | Skip auto-save; ask before writing to disk |
 | `--check` | Verify dependencies only — no video extraction, no output file. Use this to trigger the install-on-demand flow for `yt-dlp` (and `ffmpeg` when combined with `--screenshots`) without doing a real run. |
 
@@ -110,8 +114,12 @@ If you skipped step 3, the first real run will offer to install any missing depe
 # Single video — structured summary, auto-saved
 /yt-extract https://www.youtube.com/watch?v=dQw4w9WgXcQ
 
-# With comments and screenshots at chapter markers
+# With comments and screenshots at every scene change (slides, screen shares)
 /yt-extract https://youtu.be/abc123 --comments --screenshots
+
+# Fewer scene captures (higher threshold), or classic chapter-aligned frames
+/yt-extract https://youtu.be/abc123 --screenshots scenes=0.05
+/yt-extract https://youtu.be/abc123 --screenshots chapters
 
 # Full raw transcript with custom screenshot timestamps
 /yt-extract https://youtu.be/abc123 --full-transcript --screenshots 1:30,5:00,12:45
@@ -235,10 +243,11 @@ Screenshots land in two places: **embedded inside the transcript** at their matc
 
 | Mode | Where screenshots appear in the saved file |
 |---|---|
-| Summary + `--screenshots` at chapter markers (default) | Embedded inline **under each `## Chapters` entry** (1:1 mapping). The standalone `## Screenshots` section is suppressed. |
+| Summary + `--screenshots` (scene detection, default) | Standalone `## Screenshots` section at the bottom — scene timestamps are never chapter-aligned. Timestamps that fall inside a chapter still get the chapter title in their caption. |
+| Summary + `--screenshots chapters` | Embedded inline **under each `## Chapters` entry** (1:1 mapping). The standalone `## Screenshots` section is suppressed. |
 | Summary + `--screenshots 0:30,2:15,...` (custom timestamps) | Standalone `## Screenshots` section at the bottom (no chapter alignment possible). |
-| `--full-transcript` + `--screenshots` at chapter markers | Transcript is pre-structured as `### [HH:MM] Chapter Title` h3 blocks — each heading is followed by the matching screenshot and the transcript text for that interval. `## Chapters` renders as a plain TOC. Standalone `## Screenshots` section is suppressed. |
-| `--full-transcript` + `--screenshots` at custom timestamps | Each screenshot is embedded inline in the transcript with a preceding `### [HH:MM]` h3 heading (or `### [HH:MM] — Chapter Title` if the timestamp happens to fall inside a chapter). Standalone `## Screenshots` section is suppressed. |
+| `--full-transcript` + `--screenshots` (scene detection or custom timestamps) | Each screenshot is embedded inline in the transcript with a preceding `### [HH:MM]` h3 heading (or `### [HH:MM] — Chapter Title` if the timestamp falls inside a chapter). Standalone `## Screenshots` section is suppressed. |
+| `--full-transcript` + `--screenshots chapters` | Transcript is pre-structured as `### [HH:MM] Chapter Title` h3 blocks — each heading is followed by the matching screenshot and the transcript text for that interval. `## Chapters` renders as a plain TOC. Standalone `## Screenshots` section is suppressed. |
 
 The `## Screenshot Status` line (`"N screenshots requested, M successfully extracted"`) is always rendered when `--screenshots` was used, regardless of which mode.
 
@@ -382,7 +391,7 @@ There's no shortage of YouTube-summarization tools. Here's an honest, feature-by
 
 | Tool | Summary | Full transcript | Screenshots (video frames) | Multi-video batch + synthesis | Local Markdown export | Follow-up queries on extracted data |
 |------|:-------:|:---------------:|:---:|:---:|:---:|:---:|
-| **yt-extract** | ✅ structured (Thesis · Points · Tools · Quotes) | ✅ `--full-transcript` | ✅ chapters + custom timestamps | ✅ 2–3 URLs with cross-video synthesis | ✅ auto-saves `.md` with YAML frontmatter | ✅ Claude-native — ask follow-ups without copy-paste |
+| **yt-extract** | ✅ structured (Thesis · Points · Tools · Quotes) | ✅ `--full-transcript` | ✅ scene detection + chapters + custom timestamps | ✅ 2–3 URLs with cross-video synthesis | ✅ auto-saves `.md` with YAML frontmatter | ✅ Claude-native — ask follow-ups without copy-paste |
 | [Summarize.tech](https://www.summarize.tech/) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | [NoteGPT](https://notegpt.io/) | ✅ | ✅ | ❌ | ❌ | ⚠️¹ | ✅ |
 | [Eightify](https://eightify.app/) | ✅ | ✅² | ❌ | ❌ | ❌ | ❌ |
@@ -460,8 +469,8 @@ This means the package is already installed — not an error. As of v1.1.0, Step
 ### No transcript shown
 The video has no subtitles (neither manual nor auto-generated), or the language is not detected by yt-dlp. The analysis continues with metadata, description, and comments; the summary section shows `❌ No transcript available.`
 
-### No chapter markers — `--screenshots` asks where to take frames
-The video has no chapter markers. The skill prompts you: either auto-distribute evenly (1 screenshot per 2 minutes, max 10), or enter custom timestamps. You can also pass timestamps up front with `--screenshots 0:30,2:15,5:00`.
+### No chapter markers — only `--screenshots chapters` asks where to take frames
+Default scene detection works without chapter markers, so bare `--screenshots` never prompts. Only the explicit `--screenshots chapters` on a video without chapters triggers the question: auto-distribute evenly (1 screenshot per 2 minutes, max 10) or enter custom timestamps. You can also pass timestamps up front with `--screenshots 0:30,2:15,5:00`.
 
 ### Private / age-restricted / members-only videos
 Not supported. `yt-dlp` requires authentication for these, which yt-extract does not configure. Use `yt-dlp` manually with cookies if you need this.
@@ -487,7 +496,10 @@ A: Not currently. The skill doesn't expose `yt-dlp --cookies` yet. File an issue
 A: The summary aims to be a clean, scannable briefing. Image refs clutter that. The raw transcript preserves them in context, and the separate `## Screenshots` section gives you a visual index either way.
 
 **Q: How does it pick which screenshots to take?**
-A: If the video has chapter markers → one per marker. If not → the skill asks you whether to auto-distribute evenly or specify timestamps. You can also pass `--screenshots 0:30,2:15,5:00` to skip the prompt.
+A: By default (since 1.8.0), ffmpeg scene detection captures a frame at every screen change — slide flips, screen shares, demo cuts — with a 4 s minimum gap and a cap of 50 (evenly thinned beyond that, noted in `## Screenshot Status`). Tune sensitivity with `--screenshots scenes=0.05` (higher = fewer). `--screenshots chapters` takes one frame per chapter marker instead, and `--screenshots 0:30,2:15,5:00` uses your exact timestamps.
+
+**Q: Scene detection gave me too many (or too few) screenshots — what now?**
+A: Raise the threshold for fewer captures (`scenes=0.05` or `scenes=0.1`), lower it for more (`scenes=0.01`). The default `0.025` is tuned for slide-style tutorials. The `## Screenshot Status` warnings tell you which direction to go.
 
 **Q: Can the output be piped into another tool?**
 A: Yes. The saved Markdown has a YAML frontmatter block and predictable section headings (`## Description`, `## Transcript Summary`, `## Top Comments`, etc.) — easy to parse or feed back into Claude for follow-up analysis.
@@ -515,4 +527,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.7.0 — [Changelog](CHANGELOG.md)
+Version: 1.8.0 — [Changelog](CHANGELOG.md)

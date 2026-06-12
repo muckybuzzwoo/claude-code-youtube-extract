@@ -4,6 +4,76 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-06-12
+
+New screenshot mode: **ffmpeg scene detection** — capture a frame whenever the
+screen changes (slide flips, screen shares, demo cuts). Built for tutorial
+videos, where slides change far more often than chapter markers suggest.
+
+### ⚠ BREAKING
+
+- Bare `--screenshots` now means **scene detection**, not chapter markers. Use
+  `--screenshots chapters` to restore the pre-1.8.0 behavior. The legacy
+  internal value `auto` is kept as an alias for `chapters`, so direct script
+  callers passing `--screenshots auto` are unaffected.
+
+### yt-extract.py (backend)
+
+#### Added
+- Two-pass scene detection: pass 1 decodes a ≤360p stream once with ffmpeg's
+  `select='gt(scene,T)'` filter (default threshold 0.025) and collects only
+  timestamps; pass 2 extracts those frames at ≤1080p through the existing
+  `extract_screenshots()` path. Rendering, filenames, and markdown embedding
+  are unchanged (scene runs use the inline-with-heading layout).
+- Flood protection: 4s minimum gap between detections, then even thinning to
+  max 50 screenshots with a WARNING in `### Screenshot Status` (suggests a
+  higher threshold). Zero detections above threshold → opening frame only +
+  WARNING suggesting a lower threshold.
+- `--screenshots scenes=0.05` — tunable detection threshold in `(0, 1]`;
+  invalid values fall back to the default with a WARNING.
+- New stage marker `Detecting scene changes` (stderr, `[k/N]` stays adaptive).
+  Detection decodes the whole video at low resolution and gets a
+  duration-scaled timeout (min 5, max 30 minutes) plus HTTP reconnect flags.
+- New pure helpers (unit-tested): `parse_screenshots_mode`,
+  `parse_scene_timestamps`, `apply_min_gap`, `thin_evenly`; new subprocess
+  helpers `get_lowres_stream_url`, `detect_scene_timestamps`.
+
+#### Fixed
+- Screenshot seeks no longer truncate timestamps to whole seconds
+  (`-ss int(ts)` → `-ss ts:.2f`). For scene mode this is essential — a
+  truncated seek could land *before* the detected change and capture the
+  previous screen. Side effect: explicit fractional timestamps like `1:30.5`
+  now seek accurately instead of silently flooring to `1:30`.
+
+### yt-extract skill
+
+#### Changed
+- Step 0.4 flag grammar: `--screenshots [scenes[=t]|chapters|timestamps]`;
+  both subagent prompts pass the user's value through verbatim and announce
+  the new detection stage.
+- `SCREENSHOTS_ASK_USER` now only fires for `--screenshots chapters` on a
+  chapterless video — scene mode (the default) needs no chapters, so the
+  no-chapters Rückfrage disappears from the happy path.
+- No new sentinel: thinning/zero-detection conditions travel as `- WARNING:`
+  lines inside `### Screenshot Status`.
+
+### Tests
+
+#### Added
+- `tests/test_scene_detection.py` — pure-Python coverage for the four new
+  helpers, including an ffmpeg `metadata=print` fixture verified against real
+  output (`pts_time:` values may lack a decimal part).
+
+### Docs
+
+#### Changed
+- Version bumped 1.7.0 → 1.8.0 across `CLAUDE.md`, `README.md`,
+  `.claude-plugin/plugin.json`, and `.claude-plugin/marketplace.json`;
+  README gets a breaking-change callout and a scene-mode row in the flags
+  and modes tables.
+
+- @mucky
+
 ## [1.7.0] — 2026-06-12
 
 New lean `--transcript-only` mode: fetch and output just the raw transcript, no

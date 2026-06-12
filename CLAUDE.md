@@ -16,7 +16,7 @@ subagent per URL for transcript summarization.
 | Skill  | `skills/yt-extract/SKILL.md`  | User-invocable workflow (`/yt-extract`)   |
 | Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT    |
 
-Current version: **1.7.0** — see [CHANGELOG.md](CHANGELOG.md).
+Current version: **1.8.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Architectural conventions
 
@@ -24,11 +24,11 @@ Current version: **1.7.0** — see [CHANGELOG.md](CHANGELOG.md).
 - **Language:** All user-facing output (SKILL.md body, script stdout, README, CHANGELOG) is in English. Do not mix languages.
 - **Section headers:** The Python script emits a fixed set of Markdown section headers (`### Metadata`, `### Description`, `### Chapters`, `### Transcript Info`, `### Transcript`, `### Screenshots`, `### Screenshot Status`, `### Comments`). The SKILL.md subagent prompts parse these verbatim. If you rename a header, update both sides.
 - **Sentinel markers and orchestration trailers:**
-  - Inside the `### Screenshots` section: `FFMPEG_MISSING` (defensive — Step 0.5 normally prevents this) and `SCREENSHOTS_ASK_USER` (no chapters, no explicit timestamps → subagent asks user for strategy).
+  - Inside the `### Screenshots` section: `FFMPEG_MISSING` (defensive — Step 0.5 normally prevents this) and `SCREENSHOTS_ASK_USER` (since v1.8.0: only `--screenshots chapters` on a chapterless video → subagent asks user for strategy; scene-detection mode, the default, never emits it).
   - Stderr on exit code 2: `FOLDER_EXISTS: <path>` — target folder exists and `--force` was not passed. The subagent prompts the user and re-runs with `--force`.
   - Trailing stdout line on every successful run: `OUTPUT_FOLDER: <path>` — tells the skill where the script's target folder lives. Uses forward slashes. The skill trims this line from the markdown before writing the `.md`.
   - Do not introduce new sentinels or trailers without updating the skill's handling block AND this list.
-- **Stage markers on stderr:** The script emits `[k/N] <stage>` lines on stderr (flushed immediately) — metadata, transcript, comments (optional), screenshots (optional), output. `N` is adaptive based on enabled flags. Subagent prompts tell subagents to forward these to the main chat as one-line updates.
+- **Stage markers on stderr:** The script emits `[k/N] <stage>` lines on stderr (flushed immediately) — metadata, transcript, comments (optional), scene-detection (optional, scene mode only — decodes the whole video, can take minutes), screenshots (optional), output. `N` is adaptive based on enabled flags. Subagent prompts tell subagents to forward these to the main chat as one-line updates.
 - **Script owns output folder layout:** Since v1.2.0, the Python script creates the `yt-extract_<DATE>_<slug>/` folder and the `screenshots/` subfolder inside it directly. The skill does **not** do `mkdir`, `mv`, or `rmdir` for per-video layout. For multi-URL runs the skill creates the shared parent (`yt-extract_<DATE>_<N>-videos/`) before dispatch and passes it as `--output-base`.
 - **Subagent dispatch:** Multi-URL runs dispatch one subagent per URL in parallel (single message, multiple Agent-tool calls). Preserve this pattern — sequential dispatch multiplies latency.
 
@@ -41,7 +41,7 @@ The skill always passes these flags on dispatch — users never type them direct
 | `--output-base <d>` | Base directory. Script creates `<d>/yt-extract_<DATE>_<slug>/`. Default: `.` (CWD).                 |
 | `--force`           | Overwrite an existing target folder. Without it, script exits `2` with `FOLDER_EXISTS:` on stderr.  |
 
-User-facing flags (`--comments`, `--screenshots [timestamps]`, `--full-transcript`, `--transcript-only`, `--no-save`, `--check`) are parsed by the skill in Step 0.4, translated to their script equivalents where relevant, and passed down. `--transcript-only` is also a script flag: it makes the script skip the metadata fetch, comments, and screenshots and emit only the `### Transcript Info` + `### Transcript` sections; the skill runs it directly (no subagent) and names the output folder by video ID.
+User-facing flags (`--comments`, `--screenshots [scenes[=t]|chapters|timestamps]`, `--full-transcript`, `--transcript-only`, `--no-save`, `--check`) are parsed by the skill in Step 0.4, translated to their script equivalents where relevant, and passed down. Since v1.8.0, bare `--screenshots` means ffmpeg scene detection (`select` filter, default threshold 0.025, two-pass: detect on a ≤360p stream, extract at ≤1080p; 4s min-gap, max 50 captures with even thinning). `chapters` selects chapter markers (the pre-1.8.0 default; legacy value `auto` is an accepted alias). `--transcript-only` is also a script flag: it makes the script skip the metadata fetch, comments, and screenshots and emit only the `### Transcript Info` + `### Transcript` sections; the skill runs it directly (no subagent) and names the output folder by video ID.
 
 ## Out-of-scope changes
 
@@ -52,7 +52,9 @@ User-facing flags (`--comments`, `--screenshots [timestamps]`, `--full-transcrip
 
 A small automated test layer covers the deterministic helper functions in
 `scripts/yt-extract.py` — `slugify`, the timestamp formatters and parser,
-and the `render_*` helpers that build the fixed section headers. The tests
+the `render_*` helpers that build the fixed section headers, and the
+scene-detection helpers (`parse_screenshots_mode`, `parse_scene_timestamps`,
+`apply_min_gap`, `thin_evenly`). The tests
 are **pure Python**: they do not spawn `yt-dlp`, `ffmpeg`, or any
 subprocess, and do not hit the network — so nothing beyond `pytest` is
 required to run them.
