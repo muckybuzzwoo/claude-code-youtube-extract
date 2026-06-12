@@ -2,7 +2,7 @@
 name: yt-extract
 description: "Extract and analyze YouTube videos — transcript, metadata, screenshots, comments. Use only when explicitly asked to extract or analyze specific YouTube URL(s) — via /yt-extract or invoked programmatically from another skill via the Skill tool. Do not auto-trigger on incidental YouTube URL mentions or links shared merely as references."
 user-invocable: true
-argument-hint: "<youtube-url> [url2] [url3] [--screenshots [timestamps]] [--comments] [--full-transcript] [--no-save] | --check [--screenshots]"
+argument-hint: "<youtube-url> [url2] [url3] [--screenshots [chapters|scenes[=t]|timestamps]] [--comments] [--full-transcript] [--no-save] | --check [--screenshots]"
 allowed-tools: "Bash, Agent, Write, Read, AskUserQuestion"
 ---
 
@@ -136,7 +136,9 @@ Split $ARGUMENTS on whitespace/newlines. Keep only strings starting with `https:
 **Parse flags:**
 - `--comments` → fetch top comments (slow, therefore optional)
 - `--full-transcript` → return the raw transcript instead of a summary
-- `--screenshots` → extract screenshots at chapter markers (requires ffmpeg)
+- `--screenshots` → extract screenshots at scene changes via ffmpeg scene detection (default since v1.8.0 — works without chapter markers; requires ffmpeg)
+- `--screenshots scenes=0.05` → scene detection with a custom threshold (default 0.025; higher = fewer captures)
+- `--screenshots chapters` → extract screenshots at chapter markers (pre-1.8.0 default behavior)
 - `--screenshots 0:30,2:15,5:00` → extract screenshots at specific timestamps
 - `--no-save` → disable auto-save (default: analysis is auto-saved as an MD file)
 - `--check` → verify dependencies only, no extraction. Runs Step 0 (Python runtime check, yt-dlp check, and ffmpeg check when combined with `--screenshots`), prints a readiness report, and stops. URLs are ignored in check mode.
@@ -159,7 +161,8 @@ Optional flags:
   --transcript-only    just the raw transcript — fast, no summary or extras
   --full-transcript    raw transcript instead of a summary (keeps metadata)
   --comments           add the top 10 comments
-  --screenshots        capture frames at chapter markers (needs ffmpeg)
+  --screenshots        capture frames at scene changes — great for tutorials
+                       (needs ffmpeg); `--screenshots chapters` for chapter-aligned
   --no-save            show in chat only; ask before writing a file
   --check              verify dependencies only
 
@@ -315,14 +318,15 @@ Extract all data for this YouTube video and summarize the transcript.
 
 1. Run:
 ```bash
-<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --output-base "[OUTPUT_BASE]" [--force if the orchestrator said so] [--comments if requested] [--screenshots if requested, with optional timestamps]
+<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --output-base "[OUTPUT_BASE]" [--force if the orchestrator said so] [--comments if requested] [--screenshots if requested — pass the user's value verbatim: nothing | scenes=T | chapters | timestamps]
 ```
 
-**Progress surfacing (stderr stage markers):** The Python script emits lines like `[1/5] Fetching metadata...`, `[2/5] Downloading transcript...`, `[3/5] Extracting 7 screenshots...` on stderr, flushed immediately. When each stage completes, surface the marker as a one-line update in your returned message so the user sees forward motion during long runs.
+**Progress surfacing (stderr stage markers):** The Python script emits lines like `[1/5] Fetching metadata...`, `[2/5] Downloading transcript...`, `[3/6] Detecting scene changes` (scene mode only — this stage decodes the whole video and can take minutes on long videos), `[4/6] Extracting 7 screenshots...` on stderr, flushed immediately. When each stage completes, surface the marker as a one-line update in your returned message so the user sees forward motion during long runs.
 
 **FOLDER_EXISTS handling (exit code 2):** If the Bash command exits with code 2 AND stderr contains `FOLDER_EXISTS: <path>`, the target folder already exists. Ask the user via AskUserQuestion: `Folder "[path]" already exists. Overwrite?` with options "Yes, overwrite" and "No, abort". On Yes: re-run the exact same Bash command with `--force` appended. On No: return a short message "User declined overwrite for [URL]" and stop this subagent (the orchestrator will treat it as a failed extraction).
 
 2. **Check the `### Screenshots` section for `SCREENSHOTS_ASK_USER`:**
+   - Only `--screenshots chapters` on a video without chapter markers produces this sentinel — scene-detection mode (the default) never does.
    - If `SCREENSHOTS_ASK_USER` appears in the `### Screenshots` section: The video has no chapter markers. Ask the user via AskUserQuestion: "This video has no chapter markers. How should screenshots be taken?" with options: A) "Evenly distributed (1 per 2 min, max 10)" B) "Enter manual timestamps". On A: compute timestamps based on `video_duration` from the `### Screenshots` section, build a comma-separated list, re-run the script with `--screenshots T1,T2,T3,...` **and `--force`** (the first run already created the target folder). On B: wait for user input, re-run with the entered timestamps and `--force`. IMPORTANT: When re-running, DISCARD the first run's output entirely and replace it with the new one.
    - `FFMPEG_MISSING` should not appear at this stage — Step 0.5 already verified ffmpeg presence before dispatch. If it does appear (defense-in-depth), treat it as a hard error and surface the Step E stale-PATH message from `references/install-helper.md` to the user.
 
@@ -373,14 +377,14 @@ Extract all data for this YouTube video. Return exclusively the output of the Py
 
 Run exactly this one command:
 ```bash
-<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --output-base "[OUTPUT_BASE]" [--force if the orchestrator said so] [--comments if requested] [--screenshots if requested, with optional timestamps]
+<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --output-base "[OUTPUT_BASE]" [--force if the orchestrator said so] [--comments if requested] [--screenshots if requested — pass the user's value verbatim: nothing | scenes=T | chapters | timestamps]
 ```
 
-**Progress surfacing:** The script emits `[k/N]` stage markers on stderr throughout the run. Surface each one as a one-line update so the user sees forward motion.
+**Progress surfacing:** The script emits `[k/N]` stage markers on stderr throughout the run (scene mode adds a `Detecting scene changes` stage that decodes the whole video and can take minutes). Surface each one as a one-line update so the user sees forward motion.
 
 **FOLDER_EXISTS handling (exit code 2):** If the command exits with code 2 AND stderr contains `FOLDER_EXISTS: <path>`, ask the user via AskUserQuestion: `Folder "[path]" already exists. Overwrite?` with options "Yes, overwrite" and "No, abort". On Yes: re-run with `--force` appended. On No: return "User declined overwrite for [URL]" and stop.
 
-**Check the `### Screenshots` section for `SCREENSHOTS_ASK_USER`** (identical to default mode): ask user for timestamps, re-run the script **with `--force` appended** (first run already created the folder), discard the first output entirely and replace it with the new one. `FFMPEG_MISSING` is handled in Step 0.5 before dispatch and should not appear here.
+**Check the `### Screenshots` section for `SCREENSHOTS_ASK_USER`** (identical to summary mode — only `--screenshots chapters` on a chapterless video produces it, scene mode never does): ask user for timestamps, re-run the script **with `--force` appended** (first run already created the folder), discard the first output entirely and replace it with the new one. `FFMPEG_MISSING` is handled in Step 0.5 before dispatch and should not appear here.
 
 Return the complete script output as the answer — including the trailing `OUTPUT_FOLDER: <path>` line, which the orchestrator needs to locate the target folder. Add nothing, omit nothing. Screenshot image references inside the transcript and the `### Screenshot Status` section are preserved.
 
@@ -440,12 +444,12 @@ The Python backend is the source of truth for deterministic formatting. The skil
 [• In `--full-transcript` mode with chapter-aligned screenshots: OMIT — already embedded as h3 blocks inside `## Transcript`.]
 [• In `--full-transcript` mode with custom-timestamp screenshots: OMIT — already embedded with h3 headings inside `## Transcript`.]
 [• In summary mode with chapter-aligned screenshots: OMIT — already embedded under `## Chapters` above.]
-[• In summary mode with NON-chapter-aligned screenshots (custom timestamps, or no chapters, or count mismatch): render the standalone list with image references and timestamps — from the subagent's `### Screenshots` section UNCHANGED.]
+[• In summary mode with NON-chapter-aligned screenshots (scene-detected — the default mode, custom timestamps, no chapters, or count mismatch): render the standalone list with image references and timestamps — from the subagent's `### Screenshots` section UNCHANGED. Scene-detected screenshots always take this path; chapter embedding only ever applies to `--screenshots chapters` runs.]
 [• If `--screenshots` was requested but produced nothing: > No screenshots extracted.]
 [• If `--screenshots` was not requested: omit the section.]
 
 ## Screenshot Status
-[If present: success/error messages from subagent UNCHANGED — keep the `"N screenshots requested, M successfully extracted"` line even when the `## Screenshots` section above was suppressed due to chapter embedding.]
+[If present: success/error messages from subagent UNCHANGED — keep the `"N screenshots requested, M successfully extracted"` line even when the `## Screenshots` section above was suppressed due to chapter embedding. Scene mode may add `- WARNING:` lines (evenly thinned to 50, or no scene changes above threshold) — keep them unchanged too, they carry the re-run tuning hint.]
 [If `--screenshots` was not requested: omit the section.]
 
 ---
@@ -602,7 +606,7 @@ The Python script creates the per-video folder and any screenshots inside it dir
     **Conditional re-run sub-block.** Include the `Or re-run with more data:` line AND the bullets below it ONLY when at least one of these conditions is true. Omit the whole sub-block otherwise.
     - `--comments` was NOT used → include `` `--comments` to add top viewer comments ``
     - `--full-transcript` was NOT used → include `` `--full-transcript` for raw text instead of summary ``
-    - `--screenshots` was NOT used → include `` `--screenshots` for chapter-aligned frame captures ``
+    - `--screenshots` was NOT used → include `` `--screenshots` for scene-change frame captures (`--screenshots chapters` for chapter-aligned) ``
     - Single URL (not multi-video) → include `Compare to related videos: /yt-extract <url1> <url2> [<url3>]`
 
     **Transcript-only variant of the What-next block.** When `--transcript-only` was used, replace the standard block above with this — the raw transcript is in context, so the summary becomes a follow-up rather than a separate mode:
@@ -667,7 +671,11 @@ videos:
 - **YouTube Short (< 3 min):** process normally, no length hint
 - **Manual subtitles only:** use them (no "auto-generated" hint)
 - **ffmpeg not installed:** handled in Step 0.5 before subagent dispatch (install-on-demand with per-OS command). `FFMPEG_MISSING` marker in the script output is defensive-only — normally unreachable.
-- **--screenshots without chapter markers and without timestamps:** `SCREENSHOTS_ASK_USER` marker → ask user for strategy (evenly distributed or manual input)
+- **--screenshots chapters without chapter markers:** `SCREENSHOTS_ASK_USER` marker → ask user for strategy (evenly distributed or manual input). Only the explicit `chapters` mode produces this — bare `--screenshots` (scene detection) works without chapters.
+- **Scene detection finds nothing above threshold:** the run still succeeds with the opening frame only; `### Screenshot Status` carries a WARNING suggesting a lower threshold (e.g. `scenes=0.01`).
+- **Scene detection finds too many changes (>50 after the 4s min-gap):** evenly thinned to 50; WARNING in `### Screenshot Status` suggests a higher threshold (e.g. `scenes=0.05`).
+- **Scene-detection pass runs long:** it decodes the whole video at low resolution — minutes on long videos. The `Detecting scene changes` stage marker covers the silence; the script enforces a duration-scaled timeout (max 30 min).
+- **Scene-detection stream stall/timeout:** WARNING in `### Screenshot Status`, run completes with 0 screenshots — suggest re-running with `--screenshots chapters` or explicit timestamps.
 - **Timestamp outside video duration:** skipped by the Python script with a WARNING, no interruption
 - **Stream URL expired:** if ffmpeg reports a stale/expired stream URL (HTTP 403 or similar during screenshot extraction), re-run the script once — yt-dlp fetches a fresh URL on each invocation. Surface the retry to the user as a one-line status.
 - **Target folder already exists:** script exits 2 with `FOLDER_EXISTS: <path>` on stderr → subagent prompts the user via AskUserQuestion and re-runs with `--force` on confirmation. Multi-URL parent-folder collisions are handled by the skill itself before dispatch (see Step 1).
@@ -681,6 +689,6 @@ Contributor reference. End-users never read this section.
 - **Full conventions:** see `CLAUDE.md` at the repo root — it is the source of truth for the orchestration contract between this skill and `scripts/yt-extract.py`.
 - **Adding a user-facing flag:** extend the parser in Step 0.4, wire its translation into the `--output-base`/script-flag block in Step 1 (both the summary-mode and `--full-transcript` subagent prompts), and document it in `README.md` and `argument-hint`.
 - **Adding a new install target:** update the Step 0.2 matrix AND the matching matrix in `CLAUDE.md`. Every new command must be non-interactive (no license prompts, no sudo password prompts, no stdin reads) — the Bash tool has no stdin channel.
-- **Adding a sentinel or orchestration trailer:** the current registry is `FFMPEG_MISSING`, `SCREENSHOTS_ASK_USER`, `FOLDER_EXISTS:` (stderr, exit 2), and `OUTPUT_FOLDER:` (trailing stdout). Adding a new one requires coordinated changes in the script, both subagent prompts (Step 1), the skill's post-processing (Step 2/3), and the `CLAUDE.md` registry.
+- **Adding a sentinel or orchestration trailer:** the current registry is `FFMPEG_MISSING`, `SCREENSHOTS_ASK_USER`, `FOLDER_EXISTS:` (stderr, exit 2), and `OUTPUT_FOLDER:` (trailing stdout). Adding a new one requires coordinated changes in the script, both subagent prompts (Step 1), the skill's post-processing (Step 2/3), and the `CLAUDE.md` registry. (v1.8.0 scene detection deliberately added none — overflow/zero-detection conditions travel as WARNING lines inside `### Screenshot Status`.)
 - **Adding a Markdown section:** the script emits a fixed set of `###` headers parsed verbatim by the subagent prompts. Renaming or adding one requires changes on both sides — see the "Section headers" note in `CLAUDE.md`.
 - **Line-count budget:** this skill is intentionally long because it documents the full orchestration contract between the skill and `scripts/yt-extract.py`. The 500-line figure in the skills docs is a soft guideline, not a hard limit. The install-dependency helper already lives in `references/install-helper.md` — prefer extracting other long sub-workflows to `references/` rather than growing this file further.
