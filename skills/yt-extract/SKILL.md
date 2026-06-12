@@ -140,6 +140,41 @@ Split $ARGUMENTS on whitespace/newlines. Keep only strings starting with `https:
 - `--screenshots 0:30,2:15,5:00` → extract screenshots at specific timestamps
 - `--no-save` → disable auto-save (default: analysis is auto-saved as an MD file)
 - `--check` → verify dependencies only, no extraction. Runs Step 0 (Python runtime check, yt-dlp check, and ffmpeg check when combined with `--screenshots`), prints a readiness report, and stops. URLs are ignored in check mode.
+- `--transcript-only` → fetch and output ONLY the raw transcript: no metadata, description, chapters, comments, screenshots, or LLM summary, and **no subagent** (the skill runs the script directly). When set, `--comments`, `--screenshots`, and `--full-transcript` are ignored — transcript-only is the leanest mode. Combinable with `--no-save`.
+
+### 0.4.a No URL provided — always respond (never silently exit)
+
+If, after parsing URLs and flags above, **zero** YouTube URLs were found AND `--check` was not passed, do NOT proceed to Step 0.5 or Step 1. Respond with a plain-text message and stop. **Never use `AskUserQuestion` here** — a text reply is safe even when another skill invoked this one programmatically with no human present.
+
+- **No flags either** → print the full guided help:
+
+```
+yt-extract — pull transcript, summary, metadata, screenshots & comments from a YouTube video.
+
+Usage:  /yt-extract <youtube-url> [url2 url3] [flags]
+
+Default (no flags):   structured summary + metadata, auto-saved as a Markdown file.
+
+Optional flags:
+  --transcript-only    just the raw transcript — fast, no summary or extras
+  --full-transcript    raw transcript instead of a summary (keeps metadata)
+  --comments           add the top 10 comments
+  --screenshots        capture frames at chapter markers (needs ffmpeg)
+  --no-save            show in chat only; ask before writing a file
+  --check              verify dependencies only
+
+Paste a URL to start. After the first run I'll suggest follow-ups you can chain
+(summarize, extract tools, translate, compare videos) without re-fetching.
+```
+
+- **Flags were passed but no URL** → short Rückfrage that preserves the chosen flags (substitute the actual flags seen, e.g. `--transcript-only`):
+
+```
+Got --transcript-only, but no YouTube URL.
+Paste one and I'll run with that:  /yt-extract <url> --transcript-only
+```
+
+No `AskUserQuestion`, no step-by-step wizard: the happy path (`/yt-extract <url>`) stays friction-free, and option discovery happens through the post-run "What next?" block. The conversational "you mentioned a video but no URL — which one?" behavior (preserving options the user described in natural language) is orchestrator behavior performed *before* the skill is invoked, not part of this guard.
 
 ### 0.5 Check ffmpeg (only when `--screenshots` is set)
 
@@ -241,6 +276,34 @@ When the parent folder (multi-URL case) already exists, ask the user via AskUser
 ### FOLDER_EXISTS handling (per-subagent)
 
 If a subagent reports that the Python script exited with code 2 and stderr contained `FOLDER_EXISTS: <path>`, the per-video folder already exists from a previous run. The subagent prompt instructs it to resolve this via its own AskUserQuestion and re-run with `--force`. In the rare multi-URL case where multiple subagents hit this simultaneously, multiple prompts may surface — acceptable for now (documented in CHANGELOG under "Known limitations").
+
+### When `--transcript-only` IS set (no subagent):
+
+Do **not** dispatch subagents. The raw transcript is the deliverable; a subagent would only relay it back into the main context, paying for the transcript twice for zero summarization benefit. The skill runs the script directly via Bash.
+
+**1 URL** — one Bash call (substitute `<PY>` from Step 0.1):
+
+```bash
+<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --transcript-only --output-base "."
+```
+
+**2-3 URLs** — create the parent folder first, then issue one Bash call per URL **in a single message (parallel tool calls)**:
+
+```bash
+mkdir -p "./yt-extract_[DATE]_[N]-videos"
+```
+then per URL:
+```bash
+<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --transcript-only --output-base "./yt-extract_[DATE]_[N]-videos"
+```
+
+**Stage markers:** the script emits `[1/2] Downloading transcript` and `[2/2] Writing output` on stderr — surface each as a one-line update.
+
+**FOLDER_EXISTS (exit code 2):** identical handling to the other modes — if a Bash call exits 2 with `FOLDER_EXISTS: <path>` on stderr, ask via AskUserQuestion ("Folder already exists. Overwrite?") and re-run that exact command with `--force` appended.
+
+**Parse `OUTPUT_FOLDER: <path>`** (the last stdout line of each run) to locate each target folder for saving. Trim it from the transcript text before formatting. Then format per Step 2's "Transcript-only output" and save per Step 3.
+
+---
 
 ### When --full-transcript is NOT set (default):
 
@@ -445,6 +508,25 @@ The Python backend is the source of truth for deterministic formatting. The skil
 
 ---
 
+### Transcript-only output (when `--transcript-only` is set):
+
+The script emits only `### Transcript Info` and `### Transcript`. Format as:
+
+**1 URL:**
+```
+## Transcript — [video ID]
+> Note: transcript-only mode — output folder/file is named by the video ID (no metadata was fetched).
+> [If auto-generated:] Note: Auto-generated subtitles ([language])
+
+[raw transcript verbatim from the script's ### Transcript section]
+```
+
+**2-3 URLs:** one `## Transcript [i] — [video ID]` section per video, in input order. **No Synthesis section** — transcript-only is raw data, not cross-video analysis.
+
+If a video has no transcript, render `> No transcript available.` for that video and continue.
+
+---
+
 ## Step 3 — File saving
 
 **Default behavior (auto-save):** The analysis is automatically saved as a Markdown file in its own folder. The output still appears in full in the chat.
@@ -523,6 +605,18 @@ The Python script creates the per-video folder and any screenshots inside it dir
     - `--screenshots` was NOT used → include `` `--screenshots` for chapter-aligned frame captures ``
     - Single URL (not multi-video) → include `Compare to related videos: /yt-extract <url1> <url2> [<url3>]`
 
+    **Transcript-only variant of the What-next block.** When `--transcript-only` was used, replace the standard block above with this — the raw transcript is in context, so the summary becomes a follow-up rather than a separate mode:
+
+    ```
+    **What next?** The raw transcript is in context — you can ask me to:
+    - Summarize it (Core Thesis, Main Points, Tools & Resources, Quotes & Numbers)
+    - Extract all tools & resources as a checklist
+    - Translate it to another language
+
+    Or re-run for the full treatment:
+    - Drop `--transcript-only` for metadata + a structured summary
+    ```
+
     **Do NOT emit the follow-up invitation in these cases:**
     - `--check` mode (Step 0.7 short-circuit — it has its own "Ready to extract." message).
     - Any error path where the subagent failed or aborted before content was assembled (e.g. yt-dlp install declined, install-helper Step E stale-PATH abort). The block is contingent on a successful extraction with formatted content in the chat.
@@ -560,6 +654,7 @@ videos:
 
 - `flags` contains only the flags actually used (empty array `[]` when none)
 - All string values in YAML are quoted to handle special characters in titles
+- **Transcript-only mode:** no metadata is fetched, so for the single-video frontmatter set `title: "[video ID]"` and omit `channel`/`date` (keep `url` and `analyzed`). `flags` includes `transcript-only`. The filename derives from the `OUTPUT_FOLDER` last path segment exactly as in the other modes.
 
 ---
 
