@@ -46,9 +46,20 @@ pure-Python test cannot reproduce.
   Bash command, never invoke a skill or dispatch a subagent" guard
   (defense-in-depth, in case the dispatch target is ever changed back).
 - **New test** `tests/test_skill_contract.py` — static contract test asserting
-  the dispatch target is the restricted worker (not `general-purpose`) and that
-  the worker's `tools` allowlist excludes `Skill`/`Agent`/`Task`. Closes the
-  test gap at the orchestration layer.
+  the dispatch target is the restricted worker (not `general-purpose`), that the
+  worker's `tools` allowlist excludes `Skill`/`Agent`/`Task`, and that neither
+  worker prompt instructs the subagent to call `AskUserQuestion` (see next item).
+  Closes the test gap at the orchestration layer.
+- **Worker no longer asks the user directly (`AskUserQuestion` flow).** A
+  pre-existing gap surfaced during review: the Step 1 subagent prompts told the
+  worker to call `AskUserQuestion` for `FOLDER_EXISTS` and `SCREENSHOTS_ASK_USER`,
+  but subagents have **no `AskUserQuestion` tool** (it depends on the main-chat
+  UI — true for the old `general-purpose` worker too, so this was already broken).
+  The worker now **returns** these states; the **orchestrator** (main context,
+  which has `AskUserQuestion`) asks the user and re-dispatches the worker with
+  `--force` / explicit timestamps. The `--transcript-only` path is unaffected
+  (it runs in the main context and asks inline). Docs (`CLAUDE.md` sentinel
+  registry, SKILL.md edge cases) updated to match.
 
 ### Note for contributors
 

@@ -102,6 +102,42 @@ def test_skill_dispatches_restricted_worker():
     )
 
 
+def _leaf_worker_prompt_blocks(text: str) -> list:
+    """Return the text of each subagent (worker) prompt block.
+
+    Each worker prompt begins with the "You are a LEAF worker" guard and runs
+    until the next top-level `## ` heading (Step 2). The orchestrator sections,
+    which legitimately call AskUserQuestion, sit BEFORE these markers and are
+    therefore excluded.
+    """
+    blocks = []
+    for m in re.finditer(r"You are a LEAF worker", text):
+        start = m.start()
+        nxt = text.find("\n## ", start)
+        blocks.append(text[start : nxt if nxt != -1 else len(text)])
+    return blocks
+
+
+def test_worker_prompts_do_not_ask_user_directly():
+    # Subagents have no AskUserQuestion tool (it depends on the main-chat UI).
+    # A worker prompt that instructs "ask the user via AskUserQuestion" is a dead
+    # instruction — the worker must RETURN the FOLDER_EXISTS / SCREENSHOTS_ASK_USER
+    # state so the orchestrator (main context) can ask. Only the orchestrator
+    # sections may call AskUserQuestion.
+    text = SKILL_MD.read_text(encoding="utf-8")
+    blocks = _leaf_worker_prompt_blocks(text)
+    assert len(blocks) >= 2, (
+        "Expected both subagent prompts (summary + full-transcript) to carry the "
+        "'You are a LEAF worker' guard; found fewer."
+    )
+    for block in blocks:
+        assert not re.search(r"ask the user via askuserquestion", block, re.I), (
+            "A worker prompt tells the subagent to ask via AskUserQuestion, but "
+            "subagents cannot use that tool. The worker must return the state and "
+            "let the orchestrator ask."
+        )
+
+
 def test_skill_does_not_dispatch_general_purpose():
     # The Step 1 instruction must not pair `subagent_type` with general-purpose.
     # (Prose mentioning general-purpose as the *forbidden* option is fine; an

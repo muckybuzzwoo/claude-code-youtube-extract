@@ -278,9 +278,15 @@ Every subagent invocation must include `--output-base <path>`. The value depends
 
 When the parent folder (multi-URL case) already exists, ask the user via AskUserQuestion "Folder `<path>` already exists. Overwrite?" **before** creating it. On "yes": remove the existing folder (`rm -rf`) and re-create, then dispatch subagents **with `--force`** appended to each script invocation so per-video collisions inside the parent are also overwritten silently. On "no": abort the skill with a short message.
 
-### FOLDER_EXISTS handling (per-subagent)
+### Handling worker-returned states — YOU (the orchestrator) ask the user, not the worker
 
-If a subagent reports that the Python script exited with code 2 and stderr contained `FOLDER_EXISTS: <path>`, the per-video folder already exists from a previous run. The subagent prompt instructs it to resolve this via its own AskUserQuestion and re-run with `--force`. In the rare multi-URL case where multiple subagents hit this simultaneously, multiple prompts may surface — acceptable for now (documented in CHANGELOG under "Known limitations").
+The `extract-worker` subagent has **no `AskUserQuestion` tool** (no subagent does — it depends on the main-chat UI). So any state that needs a user decision is **returned by the worker** and resolved **here, in the main context, by you**, then the worker is re-dispatched. Two such states:
+
+**FOLDER_EXISTS:** If a worker's returned output is (or contains) a line `FOLDER_EXISTS: <path>`, the per-video target folder already exists from a previous run. Ask the user via AskUserQuestion: `Folder "<path>" already exists. Overwrite?` with options "Yes, overwrite" and "No, abort". On **Yes**: re-dispatch the *same* worker prompt for that URL with `--force` appended to the script command. On **No**: treat that URL as a failed/skipped extraction (note it; for a single URL, stop with a short message). (In multi-URL runs this rarely fires: the parent-folder overwrite above already passes `--force` to every worker, so per-video collisions are pre-resolved.)
+
+**SCREENSHOTS_ASK_USER:** If a worker's returned output has `SCREENSHOTS_ASK_USER` in its `### Screenshots` section (only `--screenshots chapters` on a chapterless video produces it — scene mode never does), ask the user via AskUserQuestion: "This video has no chapter markers. How should screenshots be taken?" with options A) "Evenly distributed (1 per 2 min, max 10)" B) "Enter manual timestamps". On **A**: compute timestamps from the `video_duration` value in that `### Screenshots` section, build a comma-separated list, and re-dispatch the worker with `--screenshots T1,T2,T3,... --force` (the first run already created the folder). On **B**: collect the user's timestamps, then re-dispatch with `--screenshots <those> --force`. Either way, **discard the first worker output entirely** and use the re-dispatched run's output.
+
+Re-dispatching a worker is a normal Agent-tool call from the main context — it is not recursion (the worker still has no `Skill`/`Agent` tool and runs exactly one command).
 
 ### When `--transcript-only` IS set (no subagent):
 
@@ -327,12 +333,12 @@ Extract all data for this YouTube video and summarize the transcript.
 
 **Progress surfacing (stderr stage markers):** The Python script emits lines like `[1/5] Fetching metadata...`, `[2/5] Downloading transcript...`, `[3/6] Detecting scene changes` (scene mode only — this stage decodes the whole video and can take minutes on long videos), `[4/6] Extracting 7 screenshots...` on stderr, flushed immediately. When each stage completes, surface the marker as a one-line update in your returned message so the user sees forward motion during long runs.
 
-**FOLDER_EXISTS handling (exit code 2):** If the Bash command exits with code 2 AND stderr contains `FOLDER_EXISTS: <path>`, the target folder already exists. Ask the user via AskUserQuestion: `Folder "[path]" already exists. Overwrite?` with options "Yes, overwrite" and "No, abort". On Yes: re-run the exact same Bash command with `--force` appended. On No: return a short message "User declined overwrite for [URL]" and stop this subagent (the orchestrator will treat it as a failed extraction).
+**FOLDER_EXISTS handling (exit code 2):** If the Bash command exits with code 2 AND stderr contains `FOLDER_EXISTS: <path>`, the target folder already exists. **Do NOT retry and do NOT ask the user — you have no `AskUserQuestion` tool.** Return exactly the single line `FOLDER_EXISTS: <path>` (verbatim, the path from stderr) as your entire response and stop. The orchestrator runs in the main chat, will ask the user, and will re-dispatch you with `--force` if the user confirms.
 
 2. **Check the `### Screenshots` section for `SCREENSHOTS_ASK_USER`:**
    - Only `--screenshots chapters` on a video without chapter markers produces this sentinel — scene-detection mode (the default) never does.
-   - If `SCREENSHOTS_ASK_USER` appears in the `### Screenshots` section: The video has no chapter markers. Ask the user via AskUserQuestion: "This video has no chapter markers. How should screenshots be taken?" with options: A) "Evenly distributed (1 per 2 min, max 10)" B) "Enter manual timestamps". On A: compute timestamps based on `video_duration` from the `### Screenshots` section, build a comma-separated list, re-run the script with `--screenshots T1,T2,T3,...` **and `--force`** (the first run already created the target folder). On B: wait for user input, re-run with the entered timestamps and `--force`. IMPORTANT: When re-running, DISCARD the first run's output entirely and replace it with the new one.
-   - `FFMPEG_MISSING` should not appear at this stage — Step 0.5 already verified ffmpeg presence before dispatch. If it does appear (defense-in-depth), treat it as a hard error and surface the Step E stale-PATH message from `references/install-helper.md` to the user.
+   - If `SCREENSHOTS_ASK_USER` appears in the `### Screenshots` section: **Do NOT ask the user — you have no `AskUserQuestion` tool.** Return the script output unchanged (it includes the `### Screenshots` section with the `SCREENSHOTS_ASK_USER` marker and the `video_duration` value) and stop. The orchestrator will ask the user for a screenshot strategy and re-dispatch you with explicit timestamps + `--force`.
+   - `FFMPEG_MISSING` should not appear at this stage — Step 0.5 already verified ffmpeg presence before dispatch. If it does appear (defense-in-depth), return it verbatim — do not try to resolve it; the orchestrator surfaces the Step E stale-PATH message from `references/install-helper.md`.
 
 3. Return the **Metadata**, **Description**, **Chapters** (if present), and **Comments** sections UNCHANGED.
 
@@ -388,9 +394,9 @@ Run exactly this one command:
 
 **Progress surfacing:** The script emits `[k/N]` stage markers on stderr throughout the run (scene mode adds a `Detecting scene changes` stage that decodes the whole video and can take minutes). Surface each one as a one-line update so the user sees forward motion.
 
-**FOLDER_EXISTS handling (exit code 2):** If the command exits with code 2 AND stderr contains `FOLDER_EXISTS: <path>`, ask the user via AskUserQuestion: `Folder "[path]" already exists. Overwrite?` with options "Yes, overwrite" and "No, abort". On Yes: re-run with `--force` appended. On No: return "User declined overwrite for [URL]" and stop.
+**FOLDER_EXISTS handling (exit code 2):** If the command exits with code 2 AND stderr contains `FOLDER_EXISTS: <path>`, **do NOT retry and do NOT ask — you have no `AskUserQuestion` tool.** Return exactly the single line `FOLDER_EXISTS: <path>` (verbatim) as your entire response and stop. The orchestrator will ask the user and re-dispatch you with `--force` if confirmed.
 
-**Check the `### Screenshots` section for `SCREENSHOTS_ASK_USER`** (identical to summary mode — only `--screenshots chapters` on a chapterless video produces it, scene mode never does): ask user for timestamps, re-run the script **with `--force` appended** (first run already created the folder), discard the first output entirely and replace it with the new one. `FFMPEG_MISSING` is handled in Step 0.5 before dispatch and should not appear here.
+**Check the `### Screenshots` section for `SCREENSHOTS_ASK_USER`** (identical to summary mode — only `--screenshots chapters` on a chapterless video produces it, scene mode never does): **do NOT ask — you have no `AskUserQuestion` tool.** Return the script output unchanged (it carries the `SCREENSHOTS_ASK_USER` marker and the `video_duration`) and stop; the orchestrator asks the user for timestamps and re-dispatches you with `--screenshots <timestamps> --force`. `FFMPEG_MISSING` is handled in Step 0.5 before dispatch and should not appear here.
 
 Return the complete script output as the answer — including the trailing `OUTPUT_FOLDER: <path>` line, which the orchestrator needs to locate the target folder. Add nothing, omit nothing. Screenshot image references inside the transcript and the `### Screenshot Status` section are preserved.
 
@@ -677,14 +683,14 @@ videos:
 - **YouTube Short (< 3 min):** process normally, no length hint
 - **Manual subtitles only:** use them (no "auto-generated" hint)
 - **ffmpeg not installed:** handled in Step 0.5 before subagent dispatch (install-on-demand with per-OS command). `FFMPEG_MISSING` marker in the script output is defensive-only — normally unreachable.
-- **--screenshots chapters without chapter markers:** `SCREENSHOTS_ASK_USER` marker → ask user for strategy (evenly distributed or manual input). Only the explicit `chapters` mode produces this — bare `--screenshots` (scene detection) works without chapters.
+- **--screenshots chapters without chapter markers:** `SCREENSHOTS_ASK_USER` marker → the worker returns it; the **orchestrator** asks the user for a strategy (evenly distributed or manual input) and re-dispatches with explicit timestamps (see "Handling worker-returned states" in Step 1). Only the explicit `chapters` mode produces this — bare `--screenshots` (scene detection) works without chapters.
 - **Scene detection finds nothing above threshold:** the run still succeeds with the opening frame only; `### Screenshot Status` carries a WARNING suggesting a lower threshold (e.g. `scenes=0.01`).
 - **Scene detection finds too many changes (>50 after the 4s min-gap):** evenly thinned to 50; WARNING in `### Screenshot Status` suggests a higher threshold (e.g. `scenes=0.05`).
 - **Scene-detection pass runs long:** it decodes the whole video at low resolution — minutes on long videos. The `Detecting scene changes` stage marker covers the silence; the script enforces a duration-scaled timeout (max 30 min).
 - **Scene-detection stream stall/timeout:** WARNING in `### Screenshot Status`, run completes with 0 screenshots — suggest re-running with `--screenshots chapters` or explicit timestamps. An HTTP 403 (transiently invalidated stream URL) is retried once automatically with a fresh URL before the script gives up.
 - **Timestamp outside video duration:** skipped by the Python script with a WARNING, no interruption
 - **Stream URL expired:** if ffmpeg reports a stale/expired stream URL (HTTP 403 or similar during screenshot extraction), re-run the script once — yt-dlp fetches a fresh URL on each invocation. Surface the retry to the user as a one-line status.
-- **Target folder already exists:** script exits 2 with `FOLDER_EXISTS: <path>` on stderr → subagent prompts the user via AskUserQuestion and re-runs with `--force` on confirmation. Multi-URL parent-folder collisions are handled by the skill itself before dispatch (see Step 1).
+- **Target folder already exists:** script exits 2 with `FOLDER_EXISTS: <path>` on stderr → the worker returns the `FOLDER_EXISTS:` line; the **orchestrator** asks the user via AskUserQuestion and re-dispatches the worker with `--force` on confirmation (workers have no AskUserQuestion tool — see "Handling worker-returned states" in Step 1). Multi-URL parent-folder collisions are handled by the skill itself before dispatch (see Step 1). The `--transcript-only` path runs in the main context (no subagent), so it asks and re-runs inline.
 
 ---
 
