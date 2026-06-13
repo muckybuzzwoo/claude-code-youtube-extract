@@ -4,6 +4,23 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] — 2026-06-13
+
+### Changed
+- Scene-detection default threshold raised `0.025` → `0.04`. On talking-head and
+  slide-heavy videos the old default tripped on minor frame changes and often hit
+  the 50-capture cap (then thinned); `0.04` yields fewer, more meaningful captures
+  by default. Tune per video with `--screenshots scenes=<0..1>` (lower = more).
+
+### Fixed
+- Robust `OUTPUT_FOLDER:` parsing. When a worker subagent returns, the harness can
+  append an `agentId: <hex>` trailer directly onto the trailing `OUTPUT_FOLDER:`
+  line with no separating newline (e.g. `…_my-slugagentId: a2ba…`). The orchestrator
+  now extracts the folder by cutting at the first whitespace or the literal `agentId`
+  substring instead of taking the raw last line, so the trailer can no longer be
+  folded into the saved folder/file name. Documented in SKILL.md Step 3, mirrored in
+  the `CLAUDE.md` sentinel registry, and covered by a new static contract test.
+
 ## [1.8.1] — 2026-06-13
 
 **Critical bugfix: runaway recursive subagent loop.** `/yt-extract <url>` (default

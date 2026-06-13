@@ -137,7 +137,7 @@ Split $ARGUMENTS on whitespace/newlines. Keep only strings starting with `https:
 - `--comments` → fetch top comments (slow, therefore optional)
 - `--full-transcript` → return the raw transcript instead of a summary
 - `--screenshots` → extract screenshots at scene changes via ffmpeg scene detection (default since v1.8.0 — works without chapter markers; requires ffmpeg)
-- `--screenshots scenes=0.05` → scene detection with a custom threshold (default 0.025; higher = fewer captures)
+- `--screenshots scenes=0.05` → scene detection with a custom threshold (default 0.04; higher = fewer captures)
 - `--screenshots chapters` → extract screenshots at chapter markers (pre-1.8.0 default behavior)
 - `--screenshots 0:30,2:15,5:00` → extract screenshots at specific timestamps
 - `--no-save` → disable auto-save (default: analysis is auto-saved as an MD file)
@@ -312,7 +312,7 @@ then per URL:
 
 **FOLDER_EXISTS (exit code 2):** identical handling to the other modes — if a Bash call exits 2 with `FOLDER_EXISTS: <path>` on stderr, ask via AskUserQuestion ("Folder already exists. Overwrite?") and re-run that exact command with `--force` appended.
 
-**Parse `OUTPUT_FOLDER: <path>`** (the last stdout line of each run) to locate each target folder. Trim it from the transcript text before formatting. Then treat each script's stdout exactly as you would a subagent's returned output: format per Step 2's "Transcript-only output", then run Step 3's saving flow on it. **Step 3 applies even though no subagent ran** — including `--no-save`: the script has already created the target folder, so if `--no-save` was set, ask before writing the `.md` and on decline `rm -rf` the folder(s), exactly as in the other modes.
+**Parse `OUTPUT_FOLDER: <path>`** (extract the path as described in Step 3's `OUTPUT_FOLDER` rule — transcript-only runs in the main context with no subagent boundary, so there is no `agentId:` trailer here, but use the same extraction) to locate each target folder. Trim it from the transcript text before formatting. Then treat each script's stdout exactly as you would a subagent's returned output: format per Step 2's "Transcript-only output", then run Step 3's saving flow on it. **Step 3 applies even though no subagent ran** — including `--no-save`: the script has already created the target folder, so if `--no-save` was set, ask before writing the `.md` and on decline `rm -rf` the folder(s), exactly as in the other modes.
 
 ---
 
@@ -581,7 +581,7 @@ The Python script owns the per-video folder layout. The skill only orchestrates 
 
 The Python script creates the per-video folder and any screenshots inside it directly — no staging, no moves. The skill's job is three things: pass the right `--output-base` on dispatch, read the `OUTPUT_FOLDER:` trailer from subagent output, and write the consolidated markdown.
 
-1. **Read `OUTPUT_FOLDER: <path>` from each subagent's output.** This is always the last non-empty line the script emits. Trim it from the markdown before further processing — it is an orchestration marker, not analysis content. The path uses forward slashes and is relative to CWD.
+1. **Read `OUTPUT_FOLDER: <path>` from each subagent's output.** The script prints it as the final stdout line, but **do not blindly take the last line.** When a subagent returns, the harness can append its own `agentId: <hex>` trailer onto that line with **no separating newline**, e.g. `OUTPUT_FOLDER: ./yt-extract_2026-06-13_my-slugagentId: a2ba5e8f`. To extract the folder reliably: take the text after `OUTPUT_FOLDER:`, then **cut it at the first whitespace and at the literal substring `agentId`, whichever comes first**, and strip surrounding whitespace. The result (`./yt-extract_2026-06-13_my-slug` in the example) is the folder path — forward slashes, relative to CWD, never containing a space or a colon. Trim the whole trailer line from the markdown before further processing — it is an orchestration marker, not analysis content.
 
 2. **Prepend YAML frontmatter** (see below) to the markdown.
 

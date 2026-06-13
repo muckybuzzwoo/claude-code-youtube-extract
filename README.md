@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.8.1-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.8.2-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -27,8 +27,8 @@ Tutorial videos are trapped knowledge. The content is valuable, but it sits behi
 
 | Type  | Name             | Version | Description                                                                 |
 |-------|------------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract`     | 1.8.1   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
-| Agent | `extract-worker` | 1.8.1   | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
+| Skill | `yt-extract`     | 1.8.2   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Agent | `extract-worker` | 1.8.2   | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -97,7 +97,7 @@ If you skipped step 3, the first real run will offer to install any missing depe
 | `--full-transcript` | Return the raw transcript instead of a summary |
 | `--transcript-only` | Output only the raw transcript — no metadata, summary, comments, or screenshots; no subagent. Folder/file named by video ID. |
 | `--screenshots` | Extract screenshots at **scene changes** via ffmpeg scene detection — captures every slide/screen change, ideal for tutorials. Works without chapter markers (requires ffmpeg) |
-| `--screenshots scenes=0.05` | Scene detection with a custom threshold (default `0.025`; higher = fewer captures) |
+| `--screenshots scenes=0.05` | Scene detection with a custom threshold (default `0.04`; higher = fewer captures) |
 | `--screenshots chapters` | Extract screenshots at chapter markers (the pre-1.8.0 default) |
 | `--screenshots 0:30,2:15,5:00` | Extract screenshots at custom timestamps |
 
@@ -501,7 +501,7 @@ A: The summary aims to be a clean, scannable briefing. Image refs clutter that. 
 A: By default (since 1.8.0), ffmpeg scene detection captures a frame at every screen change — slide flips, screen shares, demo cuts — with a 4 s minimum gap and a cap of 50 (evenly thinned beyond that, noted in `## Screenshot Status`). Tune sensitivity with `--screenshots scenes=0.05` (higher = fewer). `--screenshots chapters` takes one frame per chapter marker instead, and `--screenshots 0:30,2:15,5:00` uses your exact timestamps.
 
 **Q: Scene detection gave me too many (or too few) screenshots — what now?**
-A: Raise the threshold for fewer captures (`scenes=0.05` or `scenes=0.1`), lower it for more (`scenes=0.01`). The default `0.025` is tuned for slide-style tutorials. The `## Screenshot Status` warnings tell you which direction to go.
+A: Raise the threshold for fewer captures (`scenes=0.05` or `scenes=0.1`), lower it for more (`scenes=0.01`). The default `0.04` suits most slide-style tutorials. The `## Screenshot Status` warnings tell you which direction to go.
 
 **Q: Can the output be piped into another tool?**
 A: Yes. The saved Markdown has a YAML frontmatter block and predictable section headings (`## Description`, `## Transcript Summary`, `## Top Comments`, etc.) — easy to parse or feed back into Claude for follow-up analysis.
@@ -529,4 +529,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.8.1 — [Changelog](CHANGELOG.md)
+Version: 1.8.2 — [Changelog](CHANGELOG.md)

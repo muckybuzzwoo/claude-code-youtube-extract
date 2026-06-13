@@ -30,7 +30,7 @@ if sys.platform == "win32":
 TMPDIR = tempfile.gettempdir()
 
 # Scene-detection defaults (select filter scene score, range 0..1)
-DEFAULT_SCENE_THRESHOLD = 0.025
+DEFAULT_SCENE_THRESHOLD = 0.04
 SCENE_MIN_GAP_SECONDS = 4.0
 SCENE_MAX_SCREENSHOTS = 50
 SCENE_SEEK_OFFSET = 0.5  # settle offset past the detected change (fades)
@@ -928,7 +928,7 @@ def main():
     parser.add_argument(
         "--screenshots", nargs="?", const="scenes", default=None,
         help="Extract screenshots. Without value: ffmpeg scene detection "
-             "(default threshold 0.025). 'scenes=0.05': custom threshold. "
+             "(default threshold 0.04). 'scenes=0.05': custom threshold. "
              "'chapters': chapter markers. Comma-separated timestamps: "
              "0:30,2:15,5:00",
     )

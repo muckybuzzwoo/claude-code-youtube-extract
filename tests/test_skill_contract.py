@@ -148,3 +148,32 @@ def test_skill_does_not_dispatch_general_purpose():
         "SKILL.md still instructs `subagent_type: general-purpose` — that is the "
         "recursion trigger. Dispatch yt-extract:extract-worker instead."
     )
+
+
+# --- OUTPUT_FOLDER parse robustness (1.8.2) ---
+
+
+def test_skill_output_folder_parse_strips_harness_trailer():
+    # When a worker subagent returns, the harness can glue an `agentId: <hex>`
+    # trailer directly onto the trailing OUTPUT_FOLDER line with NO newline, e.g.
+    # `OUTPUT_FOLDER: ./yt-extract_..._slugagentId: a2ba`. A naive "last non-empty
+    # line" parse would fold `agentId:` into the folder name. Step 3 must instruct
+    # the orchestrator to strip that trailer. This is a prose-presence guard — the
+    # parse itself is LLM behavior (the orchestrator reads SKILL.md), not a Python
+    # function, so there is nothing to feed a glued string to; we assert the rule's
+    # wording stays present and attached to an OUTPUT_FOLDER instruction.
+    text = SKILL_MD.read_text(encoding="utf-8")
+    assert "agentId" in text, (
+        "SKILL.md must document the harness `agentId:` trailer hazard in the "
+        "OUTPUT_FOLDER parse rule (Step 3). Without it, a last-line parse folds "
+        "the trailer into the saved folder name."
+    )
+    assert re.search(r"OUTPUT_FOLDER[\s\S]{0,800}agentId", text), (
+        "The `agentId` trailer caveat must appear near an OUTPUT_FOLDER parse "
+        "instruction (Step 3), not detached from it."
+    )
+    assert re.search(r"cut it at the first whitespace", text, re.I), (
+        "Step 3 must instruct cutting the OUTPUT_FOLDER value at the first "
+        "whitespace / `agentId` substring — replacing the old fragile "
+        "'last non-empty line' rule."
+    )
