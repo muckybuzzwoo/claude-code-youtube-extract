@@ -256,7 +256,9 @@ Ready to extract. Run `/yt-extract <url>` to analyze a video.
 
 ## Step 1 — Dispatch subagents
 
-**IMPORTANT: Use the Agent tool (subagent_type: general-purpose, model: "sonnet") for each URL. With 2-3 URLs, dispatch all in parallel (in a single message with multiple Agent-tool calls).**
+**IMPORTANT: Use the Agent tool with `subagent_type: "yt-extract:extract-worker"` and `model: "sonnet"` for each URL. With 2-3 URLs, dispatch all in parallel (in a single message with multiple Agent-tool calls).**
+
+`extract-worker` is a restricted leaf worker that ships with this plugin (`agents/extract-worker.md`): its `tools` allowlist grants only `Bash, Read, Glob, Grep`, so it has **no `Skill` tool and no `Agent` tool** and therefore cannot re-invoke `/yt-extract` or spawn further subagents. **Do NOT dispatch `general-purpose` here** — that is exactly what caused the recursive-subagent loop fixed in 1.8.1 (a `general-purpose` worker re-triggered this skill, which dispatched another worker, ad infinitum). If `yt-extract:extract-worker` does not resolve, the plugin was not reloaded after install — surface that rather than falling back to `general-purpose`.
 
 ### Narration before dispatch
 
@@ -313,6 +315,8 @@ then per URL:
 Each subagent gets this prompt (substitute URL, flags, and `--output-base` path per Step 1 resolution rules above):
 
 ---
+
+You are a LEAF worker. Run ONLY the single Bash command below and then format its output. Do NOT invoke any skill — especially NOT `/yt-extract` — and do NOT dispatch any subagent. (The `extract-worker` agent has neither the `Skill` nor the `Agent` tool; if you ever feel an urge to delegate, run the command yourself instead.)
 
 Extract all data for this YouTube video and summarize the transcript.
 
@@ -372,6 +376,8 @@ Extract all data for this YouTube video and summarize the transcript.
 Each subagent gets this prompt (substitute URL, flags, and `--output-base` path per Step 1 resolution rules above):
 
 ---
+
+You are a LEAF worker. Run ONLY the single Bash command below and then return its output. Do NOT invoke any skill — especially NOT `/yt-extract` — and do NOT dispatch any subagent. (The `extract-worker` agent has neither the `Skill` nor the `Agent` tool; if you ever feel an urge to delegate, run the command yourself instead.)
 
 Extract all data for this YouTube video. Return exclusively the output of the Python script — no additional explanation, no preamble, no wrapper.
 

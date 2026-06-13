@@ -4,6 +4,59 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] — 2026-06-13
+
+**Critical bugfix: runaway recursive subagent loop.** `/yt-extract <url>` (default
+and `--full-transcript` modes — any path that dispatches a subagent) could spawn
+an ever-deepening chain of `general-purpose` subagents (~one new level every
+~30 s), burning tokens and never producing output. Transcript evidence: each
+dispatched worker's first action was `Skill(yt-extract)` — it re-invoked this
+skill instead of running the Python command it was handed, and the skill's
+Step 1 then dispatched the next worker, ad infinitum.
+
+### Root cause
+
+The recursion needed two things, both introduced in **v1.6.0**:
+
+- v1.6.0 removed `disable-model-invocation: true` to make the skill callable
+  programmatically by other skills. That flag was also the **hard structural
+  guard** that kept a subagent from reaching `/yt-extract` through the Skill
+  tool. Its removal was compensated only by a *tightened description* — a soft,
+  model-interpreted guard. But the worker's own task ("Extract all data for this
+  YouTube video…") reads as an explicit extract request, so the soft guard
+  matched exactly the case it was meant to exclude.
+- The skill dispatched `subagent_type: general-purpose`, which inherits **all**
+  tools — including `Skill` and `Agent`. With the skill now model-invocable, the
+  worker could (and did) re-invoke it.
+
+The unit suite never caught it because it only tests `scripts/yt-extract.py`
+helpers; the defect lived entirely in SKILL.md frontmatter + orchestration, and
+the manifesting behavior (worker chooses Skill over Bash) is LLM behavior a
+pure-Python test cannot reproduce.
+
+### Fixed
+
+- **New restricted worker agent** `agents/extract-worker.md` — `tools` allowlist
+  is `Bash, Read, Glob, Grep` only, so the worker has **no `Skill` and no
+  `Agent` tool** and physically cannot re-invoke the skill or spawn subagents.
+- `SKILL.md` Step 1 now dispatches `subagent_type: "yt-extract:extract-worker"`
+  instead of `general-purpose`. The skill stays model-invocable (programmatic
+  invocation by other skills is preserved).
+- Both Step 1 subagent prompts gained a "you are a LEAF worker — run only the
+  Bash command, never invoke a skill or dispatch a subagent" guard
+  (defense-in-depth, in case the dispatch target is ever changed back).
+- **New test** `tests/test_skill_contract.py` — static contract test asserting
+  the dispatch target is the restricted worker (not `general-purpose`) and that
+  the worker's `tools` allowlist excludes `Skill`/`Agent`/`Task`. Closes the
+  test gap at the orchestration layer.
+
+### Note for contributors
+
+This adds a fourth plugin component type (an agent). To restore the hard block
+instead — at the cost of programmatic invocability — re-add
+`disable-model-invocation: true` to the SKILL.md frontmatter (the v1.1.0–v1.5.0
+behavior). See `CLAUDE.md` → Architectural conventions → "Worker agent".
+
 ## [1.8.0] — 2026-06-12
 
 New screenshot mode: **ffmpeg scene detection** — capture a frame whenever the

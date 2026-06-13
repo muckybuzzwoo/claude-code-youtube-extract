@@ -11,12 +11,13 @@ subagent per URL for transcript summarization.
 
 ## Components
 
-| Type   | Path                          | Purpose                                   |
-|--------|-------------------------------|-------------------------------------------|
-| Skill  | `skills/yt-extract/SKILL.md`  | User-invocable workflow (`/yt-extract`)   |
-| Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT    |
+| Type   | Path                          | Purpose                                                        |
+|--------|-------------------------------|----------------------------------------------------------------|
+| Skill  | `skills/yt-extract/SKILL.md`  | User-invocable workflow (`/yt-extract`)                        |
+| Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT                         |
+| Agent  | `agents/extract-worker.md`    | Restricted leaf worker the skill dispatches per URL (see below) |
 
-Current version: **1.8.0** — see [CHANGELOG.md](CHANGELOG.md).
+Current version: **1.8.1** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Architectural conventions
 
@@ -31,6 +32,7 @@ Current version: **1.8.0** — see [CHANGELOG.md](CHANGELOG.md).
 - **Stage markers on stderr:** The script emits `[k/N] <stage>` lines on stderr (flushed immediately) — metadata, transcript, comments (optional), scene-detection (optional, scene mode only — decodes the whole video, can take minutes), screenshots (optional), output. `N` is adaptive based on enabled flags. Subagent prompts tell subagents to forward these to the main chat as one-line updates.
 - **Script owns output folder layout:** Since v1.2.0, the Python script creates the `yt-extract_<DATE>_<slug>/` folder and the `screenshots/` subfolder inside it directly. The skill does **not** do `mkdir`, `mv`, or `rmdir` for per-video layout. For multi-URL runs the skill creates the shared parent (`yt-extract_<DATE>_<N>-videos/`) before dispatch and passes it as `--output-base`.
 - **Subagent dispatch:** Multi-URL runs dispatch one subagent per URL in parallel (single message, multiple Agent-tool calls). Preserve this pattern — sequential dispatch multiplies latency.
+- **Worker agent (recursion guard — do not weaken):** Step 1 must dispatch `subagent_type: "yt-extract:extract-worker"`, **never `general-purpose`**. `agents/extract-worker.md` declares an explicit `tools` allowlist (`Bash, Read, Glob, Grep`) so the worker has no `Skill` and no `Agent` tool. This is structural, not cosmetic: a `general-purpose` worker inherits *all* tools, and because the skill is model-invocable (since v1.6.0 removed `disable-model-invocation: true`), such a worker re-invoked `/yt-extract` via the Skill tool, whose dispatch spawned another worker — an infinite recursion that burned tokens with no output (the 1.8.1 bug). Rules: (1) the `tools` allowlist must stay present and must exclude `Skill`/`Agent`/`Task` — omitting `tools` entirely silently reopens the loop; (2) the subagent prompts also carry a "you are a LEAF worker, do not invoke skills or dispatch agents" guard as defense-in-depth; (3) `tests/test_skill_contract.py` enforces both the dispatch target and the allowlist — keep it green. If you ever need the skill *not* model-invocable instead, re-add `disable-model-invocation: true` to the SKILL.md frontmatter (the v1.1.0–v1.5.0 guard), at the cost of programmatic invocation by other skills.
 
 ## Script CLI (internal, skill-facing)
 
@@ -45,7 +47,7 @@ User-facing flags (`--comments`, `--screenshots [scenes[=t]|chapters|timestamps]
 
 ## Out-of-scope changes
 
-- **No hooks, no MCP servers, no other skills.** Keep the plugin to one skill + one script. If functionality must grow, propose splitting into a separate plugin.
+- **No hooks, no MCP servers, no other skills.** Keep the plugin to one skill + one script + the one internal `extract-worker` agent (added in 1.8.1 as the recursion guard — see Architectural conventions). If functionality must grow beyond that, propose splitting into a separate plugin.
 - **Do not rename output folder schemes** (`yt-extract_DATE_slug/` for single-URL, `yt-extract_DATE_N-videos/` parent with nested per-video folders for multi-URL) without a migration note in CHANGELOG — downstream users may grep their filesystem for these. The multi-URL layout changed in v1.2.0 (per-video folders instead of flat `screenshots/slug/`); any further change is a breaking change.
 
 ## Testing
@@ -54,10 +56,14 @@ A small automated test layer covers the deterministic helper functions in
 `scripts/yt-extract.py` — `slugify`, the timestamp formatters and parser,
 the `render_*` helpers that build the fixed section headers, and the
 scene-detection helpers (`parse_screenshots_mode`, `parse_scene_timestamps`,
-`apply_min_gap`, `thin_evenly`). The tests
-are **pure Python**: they do not spawn `yt-dlp`, `ffmpeg`, or any
-subprocess, and do not hit the network — so nothing beyond `pytest` is
-required to run them.
+`apply_min_gap`, `thin_evenly`). Since 1.8.1, `tests/test_skill_contract.py`
+also covers the **skill ↔ worker-agent orchestration contract** by static file
+parsing: it asserts Step 1 dispatches `yt-extract:extract-worker` (never
+`general-purpose`) and that `agents/extract-worker.md` declares a `tools`
+allowlist excluding `Skill`/`Agent`/`Task` — the invariant whose absence caused
+the recursion loop. The tests are **pure Python**: they do not spawn `yt-dlp`,
+`ffmpeg`, or any subprocess, and do not hit the network — so nothing beyond
+`pytest` is required to run them.
 
 **Requirements:** Python 3.8+. Dev dependency: `pytest` only.
 
@@ -72,10 +78,14 @@ Expected output: all tests pass in well under a second.
 
 **Not covered by this unit suite:** subprocess invocations (`yt-dlp`,
 `ffmpeg`), file I/O, network calls, VTT parsing, and the full `main()`
-assembly with the trailing `OUTPUT_FOLDER:` marker. Those paths rely on
-manual verification today — broadening the automated surface (subprocess
-fakes, a VTT fixture, golden-file tests for `main()`) is a reasonable
-follow-up.
+assembly with the trailing `OUTPUT_FOLDER:` marker. The orchestration layer is
+covered only *statically* (the contract test parses files; it does not run a
+real subagent dispatch) — whether a dispatched worker actually obeys "run the
+Bash command, don't delegate" is LLM behavior that only an end-to-end run can
+confirm. The 1.8.1 recursion lived precisely in this gap: a frontmatter/agent
+wiring defect that no pure-Python test exercised. Broadening the automated
+surface (subprocess fakes, a VTT fixture, golden-file tests for `main()`) is a
+reasonable follow-up.
 
 Manual verification still matters for the full integration path: install
 the plugin locally and run `/yt-extract <real-youtube-url>` with and
