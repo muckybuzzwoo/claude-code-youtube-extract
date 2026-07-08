@@ -4,6 +4,17 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-07-08
+
+### Added
+- `--visual` flag: the summarizer worker looks at 4 evenly-spaced, ephemeral
+  keyframes so the summary can address on-screen content (diagrams, code,
+  slides). Frames are extracted to a temp dir, read by the worker, then
+  deleted — nothing is saved to the output folder. A "Visually checked at:"
+  line in the summary records which timestamps were inspected. Requires ffmpeg;
+  ignored in `--full-transcript` / `--transcript-only` modes. Adoption #3 from
+  the claude-video roadmap.
+
 ## [1.9.0] — 2026-07-08
 
 ### Added

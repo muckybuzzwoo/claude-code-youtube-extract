@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.9.0-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.10.0-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -27,8 +27,8 @@ Tutorial videos are trapped knowledge. The content is valuable, but it sits behi
 
 | Type  | Name             | Version | Description                                                                 |
 |-------|------------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract`     | 1.9.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
-| Agent | `extract-worker` | 1.9.0   | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
+| Skill | `yt-extract`     | 1.10.0  | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Agent | `extract-worker` | 1.10.0  | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -100,6 +100,7 @@ If you skipped step 3, the first real run will offer to install any missing depe
 | `--screenshots scenes=0.05` | Scene detection with a custom threshold (default `0.04`; higher = fewer captures) |
 | `--screenshots chapters` | Extract screenshots at chapter markers (the pre-1.8.0 default) |
 | `--screenshots 0:30,2:15,5:00` | Extract screenshots at custom timestamps |
+| `--visual` | Let the summarizer look at 4 evenly-spaced keyframes so the summary can address on-screen content (diagrams, code, slides). Frames are ephemeral — extracted to a temp dir, read, then deleted; nothing is saved to the output folder. Requires ffmpeg. Ignored with `--full-transcript` / `--transcript-only` (no summary to ground). |
 
 > **⚠ Breaking change in 1.8.0:** bare `--screenshots` used to mean chapter markers. It now means scene detection — pass `--screenshots chapters` to restore the old behavior. Scene detection caps output at 50 screenshots (4 s minimum gap, even thinning beyond that) and notes it in `## Screenshot Status`. Since 1.9.0, near-identical scene captures (held slides, sub-threshold flicker) are removed automatically by a perceptual dedup pass, reported as `N near-duplicate(s) removed` in the same section. Chapter and custom-timestamp captures are left untouched.
 | `--no-save` | Skip auto-save; ask before writing to disk |
@@ -127,6 +128,9 @@ If you skipped step 3, the first real run will offer to install any missing depe
 
 # Just the raw transcript, fast — no summary, no metadata fetch
 /yt-extract https://youtu.be/abc123 --transcript-only
+
+# Ground the summary in a few keyframes (diagrams, code, slides)
+/yt-extract https://youtu.be/abc123 --visual
 
 # Compare 3 videos on the same topic
 /yt-extract https://youtu.be/a https://youtu.be/b https://youtu.be/c --comments
@@ -503,6 +507,9 @@ A: By default (since 1.8.0), ffmpeg scene detection captures a frame at every sc
 **Q: Scene detection gave me too many (or too few) screenshots — what now?**
 A: Raise the threshold for fewer captures (`scenes=0.05` or `scenes=0.1`), lower it for more (`scenes=0.01`). The default `0.04` suits most slide-style tutorials. The `## Screenshot Status` warnings tell you which direction to go.
 
+**Q: What does `--visual` do vs `--screenshots`?**
+A: `--visual` gives the summarizer a few ephemeral frames to *look at* while writing the summary — nothing is saved. `--screenshots` extracts and *saves* images that are embedded in the output Markdown. You can combine both, or use either alone.
+
 **Q: Can the output be piped into another tool?**
 A: Yes. The saved Markdown has a YAML frontmatter block and predictable section headings (`## Description`, `## Transcript Summary`, `## Top Comments`, etc.) — easy to parse or feed back into Claude for follow-up analysis.
 
@@ -529,4 +536,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.9.0 — [Changelog](CHANGELOG.md)
+Version: 1.10.0 — [Changelog](CHANGELOG.md)
