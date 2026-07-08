@@ -1077,6 +1077,12 @@ def main():
              "description, chapters, comments, or screenshots. Skips the "
              "metadata fetch; names the output folder by video ID.",
     )
+    parser.add_argument(
+        "--visual", action="store_true",
+        help="Extract a few evenly-spaced keyframes to a temp dir and emit a "
+             "### Keyframes section so the summarizer can address on-screen "
+             "content. Ephemeral: the summarizer reads then deletes them.",
+    )
     args = parser.parse_args()
 
     if args.transcript_only:
@@ -1109,6 +1115,8 @@ def main():
         if ss_mode == "scenes":
             stages.append("scene-detection")
         stages.append("screenshots")
+    if args.visual:
+        stages.append("visual")
     stages.append("output")
     total_stages = len(stages)
     stage_idx = 0
@@ -1213,6 +1221,29 @@ def main():
             else:
                 emit_stage(stage_idx, total_stages, "No valid screenshot timestamps")
 
+    # --- Step 4b: Visual keyframes (optional, ephemeral) ---
+    # Evenly-spaced frames extracted to a temp dir for the summarizer worker to
+    # Read. Independent of --screenshots. Fail-open: any failure yields fewer/no
+    # frames and a text-only summary, never an abort. The worker deletes the
+    # temp dir after reading; a crash before that leaks only into the OS temp dir.
+    visual_frames: list[tuple[float, str]] = []
+    visual_tmpdir = ""
+    if args.visual:
+        stage_idx += 1
+        if not check_ffmpeg():
+            emit_stage(stage_idx, total_stages, "Visual keyframes skipped (ffmpeg missing)")
+        else:
+            emit_stage(
+                stage_idx, total_stages,
+                f"Extracting {VISUAL_FRAME_COUNT} keyframes for visual grounding",
+            )
+            vts = evenly_spaced_timestamps(meta["duration"], VISUAL_FRAME_COUNT)
+            if vts:
+                visual_tmpdir = tempfile.mkdtemp(prefix="yt-extract-visual-")
+                # chapters=[] → plain NNN_ts.png names; warnings discarded (visual
+                # is internal/fail-open, its failures are not user-facing notes).
+                visual_frames = extract_screenshots(url, vts, visual_tmpdir, [], [])
+
     # --- Step 5: Output ---
     stage_idx += 1
     emit_stage(stage_idx, total_stages, "Writing output")
@@ -1240,6 +1271,7 @@ def main():
             screenshot_warnings,
             deduped=screenshot_deduped,
         ),
+        render_keyframes(visual_tmpdir, visual_frames),
         render_comments(args.comments, comments),
     ]
     print("\n".join(section for section in sections if section))
