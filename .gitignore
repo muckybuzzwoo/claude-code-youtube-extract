@@ -1,6 +1,9 @@
 # Claude Code local state
 .claude/
 
+# Local docs / analysis notes — not part of the published plugin
+docs/
+
 # Test output from /yt-extract runs
 yt-extract_*/
 
