@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -295,3 +296,28 @@ def test_render_comments_numbers_multiple_comments_sequentially():
         "2. **Bob** (👍 2) — Second\n"
         "3. **Carol** (👍 0) — Third"
     )
+
+
+# --- render_keyframes ---
+
+
+def test_render_keyframes_empty_returns_blank():
+    assert yt_extract.render_keyframes("/tmp/x", []) == ""
+
+
+def test_render_keyframes_format():
+    out = yt_extract.render_keyframes(
+        "/tmp/x",
+        [(260.0, "001_04m20s.png"), (620.0, "002_10m20s.png")],
+    )
+    expected = "\n".join([
+        "### Keyframes",
+        f"4:20  {os.path.join('/tmp/x', '001_04m20s.png')}",
+        f"10:20  {os.path.join('/tmp/x', '002_10m20s.png')}",
+        "",
+    ])
+    assert out == expected
+
+
+def test_visual_frame_count_default_is_four():
+    assert yt_extract.VISUAL_FRAME_COUNT == 4

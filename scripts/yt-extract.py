@@ -42,6 +42,10 @@ SCENE_SEEK_OFFSET = 0.5  # settle offset past the detected change (fades)
 PERCEPTUAL_DEDUP_THRESHOLD = 2.0
 THUMBNAIL_SIZE = 16
 
+# Visual grounding (--visual): how many evenly-spaced keyframes the summarizer
+# worker looks at. Fixed (no override) — keeps the token cost predictable.
+VISUAL_FRAME_COUNT = 4
+
 
 def run_ytdlp(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -268,6 +272,21 @@ def render_screenshot_status(
         lines.append(line + ".")
     for warning in screenshot_warnings:
         lines.append(f"- WARNING: {warning}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_keyframes(tmpdir: str, frames: list[tuple[float, str]]) -> str:
+    """Render the ### Keyframes section: one 'display_ts  abspath' line per
+    extracted visual frame. The summarizer worker CONSUMES this section (Reads
+    the images, weaves observations into the summary, deletes the temp dir) and
+    strips it from its returned output — it is never relayed to the orchestrator.
+    Returns "" when no frames were extracted (fail-open: summary is text-only)."""
+    if not frames:
+        return ""
+    lines = ["### Keyframes"]
+    for ts, fname in frames:
+        lines.append(f"{format_timestamp_display(ts)}  {os.path.join(tmpdir, fname)}")
     lines.append("")
     return "\n".join(lines)
 
