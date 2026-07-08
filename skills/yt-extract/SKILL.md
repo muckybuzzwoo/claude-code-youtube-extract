@@ -367,6 +367,7 @@ Extract all data for this YouTube video and summarize the transcript.
 ```
 ### Transcript Info
 [auto-generated/manual, language — taken from the script output]
+[if a ### Keyframes section was present (--visual run): also add a final line `Visually checked at: <t1>, <t2>, ...` per step 4b]
 
 ### Transcript Summary
 
