@@ -4,6 +4,27 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.3] — 2026-07-08
+
+Documentation-only release. No functional, output, or CLI change — extraction
+behavior, sentinels, and folder layout are identical to 1.8.2.
+
+### Docs
+
+#### Added
+- `SKILL.md` "Extending this skill" now documents the release workflow: which
+  files carry the version string, the CHANGELOG + SemVer convention, the
+  `python -m pytest tests/` gate, and the tag / GitHub Release /
+  `claude plugin update` steps. The contributor section previously covered
+  adding flags, install targets, sentinels, and Markdown sections but never how
+  to cut a release.
+
+#### Changed
+- Version bumped 1.8.2 → 1.8.3 across `.claude-plugin/plugin.json`,
+  `.claude-plugin/marketplace.json`, `CLAUDE.md`, and `README.md`.
+
+- @mucky
+
 ## [1.8.2] — 2026-06-13
 
 ### Changed

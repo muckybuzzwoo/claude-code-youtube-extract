@@ -17,7 +17,7 @@ subagent per URL for transcript summarization.
 | Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT                         |
 | Agent  | `agents/extract-worker.md`    | Restricted leaf worker the skill dispatches per URL (see below) |
 
-Current version: **1.8.2** — see [CHANGELOG.md](CHANGELOG.md).
+Current version: **1.8.3** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Architectural conventions
 
