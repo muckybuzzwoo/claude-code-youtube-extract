@@ -196,3 +196,29 @@ def test_dedupe_uses_module_default_threshold():
     # Delta of 1.0 is below the default 2.0 -> second frame dropped.
     assert yt_extract.dedupe_perceptual_indices([[0], [1]]) == [0]
     assert yt_extract.PERCEPTUAL_DEDUP_THRESHOLD == 2.0
+
+
+# --- evenly_spaced_timestamps ---
+
+
+def test_evenly_spaced_basic():
+    assert yt_extract.evenly_spaced_timestamps(100.0, 4) == [20.0, 40.0, 60.0, 80.0]
+
+
+def test_evenly_spaced_count_zero():
+    assert yt_extract.evenly_spaced_timestamps(100.0, 0) == []
+
+
+def test_evenly_spaced_zero_duration():
+    assert yt_extract.evenly_spaced_timestamps(0.0, 4) == []
+
+
+def test_evenly_spaced_negative_duration():
+    assert yt_extract.evenly_spaced_timestamps(-10.0, 4) == []
+
+
+def test_evenly_spaced_all_strictly_inside_range_no_dupes():
+    ts = yt_extract.evenly_spaced_timestamps(2.0, 4)
+    assert len(ts) == 4
+    assert len(set(ts)) == 4          # tiny duration must not collapse to dupes
+    assert all(0 < t < 2.0 for t in ts)

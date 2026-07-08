@@ -532,6 +532,16 @@ def apply_min_gap(timestamps: list[float], min_gap: float = SCENE_MIN_GAP_SECOND
     return kept
 
 
+def evenly_spaced_timestamps(duration: float, count: int) -> list[float]:
+    """Return `count` timestamps evenly spaced across a video of `duration`
+    seconds, at duration*i/(count+1) for i in 1..count. Used by --visual to
+    sample keyframes for visual grounding. Returns [] when duration or count
+    is non-positive (fail-open: the caller then extracts nothing)."""
+    if duration <= 0 or count <= 0:
+        return []
+    return [duration * i / (count + 1) for i in range(1, count + 1)]
+
+
 def thin_evenly(timestamps: list[float], max_count: int = SCENE_MAX_SCREENSHOTS) -> list[float]:
     """Reduce to max_count entries by even index sampling, preserving the
     first and last timestamp. Returns the list unchanged when small enough."""
