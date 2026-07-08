@@ -2,7 +2,7 @@
 name: yt-extract
 description: "Extract and analyze YouTube videos — transcript, metadata, screenshots, comments. Use only when explicitly asked to extract or analyze specific YouTube URL(s) — via /yt-extract or invoked programmatically from another skill via the Skill tool. Do not auto-trigger on incidental YouTube URL mentions or links shared merely as references."
 user-invocable: true
-argument-hint: "<youtube-url> [url2] [url3] [--screenshots [chapters|scenes[=t]|timestamps]] [--comments] [--full-transcript] [--no-save] | --check [--screenshots]"
+argument-hint: "<youtube-url> [url2] [url3] [--screenshots [chapters|scenes[=t]|timestamps]] [--comments] [--full-transcript] [--visual] [--no-save] | --check [--screenshots]"
 allowed-tools: "Bash, Agent, Write, Read, AskUserQuestion"
 ---
 
@@ -140,6 +140,7 @@ Split $ARGUMENTS on whitespace/newlines. Keep only strings starting with `https:
 - `--screenshots scenes=0.05` → scene detection with a custom threshold (default 0.04; higher = fewer captures)
 - `--screenshots chapters` → extract screenshots at chapter markers (pre-1.8.0 default behavior)
 - `--screenshots 0:30,2:15,5:00` → extract screenshots at specific timestamps
+- `--visual` → have the summarizer worker look at 4 evenly-spaced keyframes so the summary can address on-screen content (diagrams, code, slides). Frames are ephemeral (temp dir, deleted after reading — not saved). Requires ffmpeg. **Ignored** when `--full-transcript` or `--transcript-only` is set (those produce no summary) — note it in the output: "--visual has no effect without a summary — omitted."
 - `--no-save` → disable auto-save (default: analysis is auto-saved as an MD file)
 - `--check` → verify dependencies only, no extraction. Runs Step 0 (Python runtime check, yt-dlp check, and ffmpeg check when combined with `--screenshots`), prints a readiness report, and stops. URLs are ignored in check mode.
 - `--transcript-only` → fetch and output ONLY the raw transcript: no metadata, description, chapters, comments, screenshots, or LLM summary, and **no subagent** (the skill runs the script directly). When set, `--comments`, `--screenshots`, and `--full-transcript` are ignored — transcript-only is the leanest mode. Combinable with `--no-save`.
@@ -163,6 +164,8 @@ Optional flags:
   --comments           add the top 10 comments
   --screenshots        capture frames at scene changes — great for tutorials
                        (needs ffmpeg); `--screenshots chapters` for chapter-aligned
+  --visual             let the summarizer see a few keyframes — grounds the
+                       summary in on-screen content (needs ffmpeg)
   --no-save            show in chat only; ask before writing a file
   --check              verify dependencies only
 
@@ -179,9 +182,9 @@ Paste one and I'll run with that:  /yt-extract <url> [those flags]
 
 No `AskUserQuestion`, no step-by-step wizard: the happy path (`/yt-extract <url>`) stays friction-free, and option discovery happens through the post-run "What next?" block. The conversational "you mentioned a video but no URL — which one?" behavior (preserving options the user described in natural language) is orchestrator behavior performed *before* the skill is invoked, not part of this guard.
 
-### 0.5 Check ffmpeg (only when `--screenshots` is set)
+### 0.5 Check ffmpeg (when `--screenshots` OR `--visual` is set)
 
-If `--screenshots` was **not** parsed, skip this step entirely.
+If neither `--screenshots` nor `--visual` was parsed, skip this step entirely.
 
 **Narration:** Before running the check, say in chat: "Verifying ffmpeg before screenshot extraction..." — so the user sees what is happening.
 
@@ -206,6 +209,8 @@ ffmpeg -version 2>&1
 - `verify_cmd = "ffmpeg -version"`
 
 When `skip_screenshots` is set, **omit the `--screenshots` flag from the subagent's script invocation** and make a note in the final output that screenshots were skipped because ffmpeg was not installed.
+
+When `skip_visual` is set (ffmpeg install declined and `--visual` was requested), **omit the `--visual` flag from the subagent's script invocation** and note in the final output that visual grounding was skipped because ffmpeg was not installed.
 
 This Step-0 check replaces the per-subagent `FFMPEG_MISSING` handling. It also prevents parallel install prompts on multi-URL runs — exactly **one** ffmpeg prompt fires before subagent dispatch, regardless of URL count.
 
@@ -328,10 +333,10 @@ Extract all data for this YouTube video and summarize the transcript.
 
 1. Run:
 ```bash
-<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --output-base "[OUTPUT_BASE]" [--force if the orchestrator said so] [--comments if requested] [--screenshots if requested — pass the user's value verbatim: nothing | scenes=T | chapters | timestamps]
+<PY> "${CLAUDE_PLUGIN_ROOT}/scripts/yt-extract.py" "[URL]" --output-base "[OUTPUT_BASE]" [--force if the orchestrator said so] [--comments if requested] [--visual if requested] [--screenshots if requested — pass the user's value verbatim: nothing | scenes=T | chapters | timestamps]
 ```
 
-**Progress surfacing (stderr stage markers):** The Python script emits lines like `[1/5] Fetching metadata...`, `[2/5] Downloading transcript...`, `[3/6] Detecting scene changes` (scene mode only — this stage decodes the whole video and can take minutes on long videos), `[4/6] Extracting 7 screenshots...` on stderr, flushed immediately. When each stage completes, surface the marker as a one-line update in your returned message so the user sees forward motion during long runs.
+**Progress surfacing (stderr stage markers):** The Python script emits lines like `[1/5] Fetching metadata...`, `[2/5] Downloading transcript...`, `[3/6] Detecting scene changes` (scene mode only — this stage decodes the whole video and can take minutes on long videos), `[4/6] Extracting 7 screenshots...`, `[k/N] Extracting 4 keyframes for visual grounding` (only when `--visual` ran) on stderr, flushed immediately. When each stage completes, surface the marker as a one-line update in your returned message so the user sees forward motion during long runs.
 
 **FOLDER_EXISTS handling (exit code 2):** If the Bash command exits with code 2 AND stderr contains `FOLDER_EXISTS: <path>`, the target folder already exists. **Do NOT retry and do NOT ask the user — you have no `AskUserQuestion` tool.** Return exactly the single line `FOLDER_EXISTS: <path>` (verbatim, the path from stderr) as your entire response and stop. The orchestrator runs in the main chat, will ask the user, and will re-dispatch you with `--force` if the user confirms.
 
@@ -343,6 +348,13 @@ Extract all data for this YouTube video and summarize the transcript.
 3. Return the **Metadata**, **Description**, **Chapters** (if present), and **Comments** sections UNCHANGED.
 
 4. Return the **Screenshots** and **Screenshot Status** sections (if present) UNCHANGED — they contain relative image paths (like `screenshots/NNN_HHmmss.png`) and error/success messages that must be preserved.
+
+4b. **If a `### Keyframes` section is present** (only when `--visual` ran): it lists absolute PNG paths with display timestamps. For each listed path, use the `Read` tool to open the image. Then:
+   - **Weave** what you see into the existing summary sections (e.g. describe a diagram, code, or slide under the relevant Main Point or Tools & Resources entry). Do NOT add a new summary section.
+   - Add one line at the end of `### Transcript Info`: `Visually checked at: <t1>, <t2>, ...` (the display timestamps from the `### Keyframes` lines).
+   - **Delete the temp directory** afterwards: run `rm -rf "<dir>"` where `<dir>` is the parent directory of the listed paths (they all share one temp dir).
+   - **Do NOT include the `### Keyframes` section in your returned output** — it is internal; consume it and drop it.
+   - If a frame is blank/uninformative, ignore it. If no `### Keyframes` section is present, skip this step entirely.
 
 **Preserve the trailing `OUTPUT_FOLDER: <path>` line** that the script emits after the Comments section. The orchestrator parses this to decide where to write the consolidated markdown. Return it verbatim at the end of your response.
 
@@ -687,6 +699,8 @@ videos:
 - **Scene detection finds nothing above threshold:** the run still succeeds with the opening frame only; `### Screenshot Status` carries a WARNING suggesting a lower threshold (e.g. `scenes=0.01`).
 - **Scene detection finds too many changes (>50 after the 4s min-gap):** evenly thinned to 50; WARNING in `### Screenshot Status` suggests a higher threshold (e.g. `scenes=0.05`).
 - **Near-identical scene captures (since 1.9.0):** after extraction, scenes mode drops perceptual duplicates (held slides, sub-threshold flicker) by comparing 16×16 grayscale thumbnails. This is automatic, scenes-only, and not tunable via a flag; `### Screenshot Status` reports it as `D near-duplicate(s) removed (K kept)`. `chapters`/`timestamps` captures are never deduped.
+- **`--visual` (since 1.10.0):** extracts 4 evenly-spaced keyframes to a temp dir; the summarizer worker Reads them, weaves on-screen content into the summary, records a "Visually checked at:" line, then deletes the temp dir. Ephemeral — no PNG is saved to the output folder. Requires ffmpeg (checked in Step 0.5). Ignored in `--full-transcript`/`--transcript-only` (no summary to ground). If frame extraction yields nothing, the summary is built text-only with no note.
+- **`--visual` + `--screenshots chapters` on a chapterless video:** the worker returns `SCREENSHOTS_ASK_USER` and stops before deleting the visual temp dir — that first temp dir leaks to the OS temp dir (reclaimed by the OS). The orchestrator's re-dispatch re-extracts and cleans up normally. Only affects explicit `chapters` mode, never the default scene mode.
 - **Scene-detection pass runs long:** it decodes the whole video at low resolution — minutes on long videos. The `Detecting scene changes` stage marker covers the silence; the script enforces a duration-scaled timeout (max 30 min).
 - **Scene-detection stream stall/timeout:** WARNING in `### Screenshot Status`, run completes with 0 screenshots — suggest re-running with `--screenshots chapters` or explicit timestamps. An HTTP 403 (transiently invalidated stream URL) is retried once automatically with a fresh URL before the script gives up.
 - **Timestamp outside video duration:** skipped by the Python script with a WARNING, no interruption
