@@ -217,6 +217,14 @@ def test_evenly_spaced_negative_duration():
     assert yt_extract.evenly_spaced_timestamps(-10.0, 4) == []
 
 
+def test_evenly_spaced_none_duration():
+    assert yt_extract.evenly_spaced_timestamps(None, 4) == []
+
+
+def test_evenly_spaced_negative_count():
+    assert yt_extract.evenly_spaced_timestamps(100.0, -1) == []
+
+
 def test_evenly_spaced_all_strictly_inside_range_no_dupes():
     ts = yt_extract.evenly_spaced_timestamps(2.0, 4)
     assert len(ts) == 4

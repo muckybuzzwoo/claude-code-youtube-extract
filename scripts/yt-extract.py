@@ -286,7 +286,8 @@ def render_keyframes(tmpdir: str, frames: list[tuple[float, str]]) -> str:
         return ""
     lines = ["### Keyframes"]
     for ts, fname in frames:
-        lines.append(f"{format_timestamp_display(ts)}  {os.path.join(tmpdir, fname)}")
+        path = os.path.join(tmpdir, fname).replace(os.sep, "/")
+        lines.append(f"{format_timestamp_display(ts)}  {path}")
     lines.append("")
     return "\n".join(lines)
 
@@ -556,7 +557,7 @@ def evenly_spaced_timestamps(duration: float, count: int) -> list[float]:
     seconds, at duration*i/(count+1) for i in 1..count. Used by --visual to
     sample keyframes for visual grounding. Returns [] when duration or count
     is non-positive (fail-open: the caller then extracts nothing)."""
-    if duration <= 0 or count <= 0:
+    if not duration or duration <= 0 or count <= 0:
         return []
     return [duration * i / (count + 1) for i in range(1, count + 1)]
 
@@ -1243,6 +1244,9 @@ def main():
                 # chapters=[] → plain NNN_ts.png names; warnings discarded (visual
                 # is internal/fail-open, its failures are not user-facing notes).
                 visual_frames = extract_screenshots(url, vts, visual_tmpdir, [], [])
+                if not visual_frames:
+                    shutil.rmtree(visual_tmpdir, ignore_errors=True)
+                    visual_tmpdir = ""
 
     # --- Step 5: Output ---
     stage_idx += 1

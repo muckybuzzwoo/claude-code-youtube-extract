@@ -1,5 +1,4 @@
 import importlib.util
-import os
 from pathlib import Path
 
 import pytest
@@ -312,8 +311,8 @@ def test_render_keyframes_format():
     )
     expected = "\n".join([
         "### Keyframes",
-        f"4:20  {os.path.join('/tmp/x', '001_04m20s.png')}",
-        f"10:20  {os.path.join('/tmp/x', '002_10m20s.png')}",
+        "4:20  /tmp/x/001_04m20s.png",
+        "10:20  /tmp/x/002_10m20s.png",
         "",
     ])
     assert out == expected
