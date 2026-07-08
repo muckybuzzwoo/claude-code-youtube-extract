@@ -4,6 +4,22 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-07-09
+
+### Fixed
+- **Screenshot extraction falsely reported as failed on long output paths.**
+  `extract_screenshots()` checked `os.path.exists()`/`os.path.getsize()` on
+  the raw constructed path to confirm each frame was written. On Windows,
+  paths beyond the legacy 260-character `MAX_PATH` limit silently fail that
+  check — ffmpeg had already written the frame correctly, but the stat call
+  returned as if the file didn't exist, so every frame was logged as
+  `Frame at HH:MM:SS failed: unknown error` and the run reported `0
+  successfully extracted` despite valid PNGs on disk. New `_long_path()`
+  helper applies the `\\?\` extended-length prefix on Windows before the
+  check; no-op on macOS/Linux, which do not have this limit. Only manifests
+  with long `--output-base` trees (e.g. deeply nested temp/session dirs) —
+  the default `--output-base "."` case was unaffected.
+
 ## [1.10.0] - 2026-07-08
 
 ### Added

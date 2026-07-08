@@ -762,6 +762,21 @@ def detect_scene_timestamps(
     return [0.0] + offset_applied
 
 
+def _long_path(path: str) -> str:
+    """Return the \\\\?\\ extended-length form of an absolute Windows path.
+
+    Windows' legacy 260-char MAX_PATH silently breaks os.path.exists()/
+    getsize() for longer paths (observed with deep --output-base trees):
+    ffmpeg writes the frame fine, but a plain stat() on the same path
+    string returns False. The \\\\?\\ prefix opts into the real (32K) limit.
+    No-op on non-Windows, where this limit does not exist.
+    """
+    if os.name != "nt":
+        return path
+    abspath = os.path.normpath(os.path.abspath(path))
+    return abspath if abspath.startswith("\\\\?\\") else "\\\\?\\" + abspath
+
+
 def extract_screenshots(
     url: str,
     timestamps: list[float],
@@ -811,7 +826,8 @@ def extract_screenshots(
 
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            if proc.returncode == 0 and os.path.exists(filepath):
+            checked_path = _long_path(filepath)
+            if os.path.exists(checked_path) and os.path.getsize(checked_path) > 0:
                 results.append((ts, filename))
             else:
                 err = proc.stderr.strip() if proc.stderr else "unknown error"

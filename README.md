@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.10.0-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.10.1-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -27,8 +27,8 @@ Tutorial videos are trapped knowledge. The content is valuable, but it sits behi
 
 | Type  | Name             | Version | Description                                                                 |
 |-------|------------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract`     | 1.10.0  | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
-| Agent | `extract-worker` | 1.10.0  | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
+| Skill | `yt-extract`     | 1.10.1  | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Agent | `extract-worker` | 1.10.1  | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -536,4 +536,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.10.0 — [Changelog](CHANGELOG.md)
+Version: 1.10.1 — [Changelog](CHANGELOG.md)

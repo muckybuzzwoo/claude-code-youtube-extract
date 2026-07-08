@@ -1,7 +1,7 @@
 {
   "name": "yt-extract",
   "description": "Extract transcripts, metadata, screenshots, and comments from YouTube videos — all in one Claude Code command",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "author": {
     "name": "Mucky / buzzwoo"
   },
