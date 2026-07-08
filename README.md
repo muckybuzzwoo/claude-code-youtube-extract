@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.8.3-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-1.9.0-blue">
   <img alt="claude-code" src="https://img.shields.io/badge/Claude%20Code-plugin-purple">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <img alt="platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
@@ -27,8 +27,8 @@ Tutorial videos are trapped knowledge. The content is valuable, but it sits behi
 
 | Type  | Name             | Version | Description                                                                 |
 |-------|------------------|---------|-----------------------------------------------------------------------------|
-| Skill | `yt-extract`     | 1.8.3   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
-| Agent | `extract-worker` | 1.8.3   | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
+| Skill | `yt-extract`     | 1.9.0   | Extract transcripts, metadata, screenshots, and comments from YouTube videos |
+| Agent | `extract-worker` | 1.9.0   | Internal restricted worker the skill dispatches per URL (run only — no delegation) |
 
 This plugin has no dependencies on other Claude Code plugins.
 
@@ -101,7 +101,7 @@ If you skipped step 3, the first real run will offer to install any missing depe
 | `--screenshots chapters` | Extract screenshots at chapter markers (the pre-1.8.0 default) |
 | `--screenshots 0:30,2:15,5:00` | Extract screenshots at custom timestamps |
 
-> **⚠ Breaking change in 1.8.0:** bare `--screenshots` used to mean chapter markers. It now means scene detection — pass `--screenshots chapters` to restore the old behavior. Scene detection caps output at 50 screenshots (4 s minimum gap, even thinning beyond that) and notes it in `## Screenshot Status`.
+> **⚠ Breaking change in 1.8.0:** bare `--screenshots` used to mean chapter markers. It now means scene detection — pass `--screenshots chapters` to restore the old behavior. Scene detection caps output at 50 screenshots (4 s minimum gap, even thinning beyond that) and notes it in `## Screenshot Status`. Since 1.9.0, near-identical scene captures (held slides, sub-threshold flicker) are removed automatically by a perceptual dedup pass, reported as `N near-duplicate(s) removed` in the same section. Chapter and custom-timestamp captures are left untouched.
 | `--no-save` | Skip auto-save; ask before writing to disk |
 | `--check` | Verify dependencies only — no video extraction, no output file. Use this to trigger the install-on-demand flow for `yt-dlp` (and `ffmpeg` when combined with `--screenshots`) without doing a real run. |
 
@@ -498,7 +498,7 @@ A: Not currently. The skill doesn't expose `yt-dlp --cookies` yet. File an issue
 A: The summary aims to be a clean, scannable briefing. Image refs clutter that. The raw transcript preserves them in context, and the separate `## Screenshots` section gives you a visual index either way.
 
 **Q: How does it pick which screenshots to take?**
-A: By default (since 1.8.0), ffmpeg scene detection captures a frame at every screen change — slide flips, screen shares, demo cuts — with a 4 s minimum gap and a cap of 50 (evenly thinned beyond that, noted in `## Screenshot Status`). Tune sensitivity with `--screenshots scenes=0.05` (higher = fewer). `--screenshots chapters` takes one frame per chapter marker instead, and `--screenshots 0:30,2:15,5:00` uses your exact timestamps.
+A: By default (since 1.8.0), ffmpeg scene detection captures a frame at every screen change — slide flips, screen shares, demo cuts — with a 4 s minimum gap and a cap of 50 (evenly thinned beyond that, noted in `## Screenshot Status`). Since 1.9.0 a perceptual dedup pass then removes near-identical captures, so a slide held across several detected changes collapses to a single frame. Tune sensitivity with `--screenshots scenes=0.05` (higher = fewer). `--screenshots chapters` takes one frame per chapter marker instead, and `--screenshots 0:30,2:15,5:00` uses your exact timestamps.
 
 **Q: Scene detection gave me too many (or too few) screenshots — what now?**
 A: Raise the threshold for fewer captures (`scenes=0.05` or `scenes=0.1`), lower it for more (`scenes=0.01`). The default `0.04` suits most slide-style tutorials. The `## Screenshot Status` warnings tell you which direction to go.
@@ -529,4 +529,4 @@ Good first issues: additional install methods (e.g. `choco` on Windows, `snap` o
 
 ---
 
-Version: 1.8.3 — [Changelog](CHANGELOG.md)
+Version: 1.9.0 — [Changelog](CHANGELOG.md)

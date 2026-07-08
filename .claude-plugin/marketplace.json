@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "yt-extract",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "Single-plugin marketplace hosting yt-extract",
   "owner": {
     "name": "Mucky / buzzwoo"
@@ -10,7 +10,7 @@
     {
       "name": "yt-extract",
       "description": "Extract transcripts, metadata, screenshots, and comments from YouTube videos — all in one Claude Code command",
-      "version": "1.8.3",
+      "version": "1.9.0",
       "source": "./",
       "category": "productivity",
       "author": {

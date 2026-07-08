@@ -236,6 +236,30 @@ def test_render_screenshot_status_full_success_no_warnings():
     )
 
 
+def test_render_screenshot_status_reports_dedup():
+    # Scenes-mode dedup: 5 extracted, 2 near-duplicates removed, 3 kept.
+    # "extracted" must stay honest (kept + deduped), and the dropped frames
+    # are reported as dedup, not as extraction failures.
+    shots = [(0.0, "a.png"), (10.0, "b.png"), (20.0, "c.png")]
+    rendered = yt_extract.render_screenshot_status(True, "", 5, shots, [], deduped=2)
+    assert rendered == (
+        "### Screenshot Status\n"
+        "5 screenshots requested, 5 successfully extracted, "
+        "2 near-duplicate(s) removed (3 kept).\n"
+    )
+
+
+def test_render_screenshot_status_dedup_zero_is_backwards_compatible():
+    # deduped defaults to 0 -> identical to the pre-dedup wording.
+    rendered = yt_extract.render_screenshot_status(
+        True, "", 2, [(30, "a.png"), (60, "b.png")], []
+    )
+    assert rendered == (
+        "### Screenshot Status\n"
+        "2 screenshots requested, 2 successfully extracted.\n"
+    )
+
+
 def test_render_screenshot_status_multiple_warnings():
     rendered = yt_extract.render_screenshot_status(
         True, "", 3, [(30, "a.png")], ["First failed", "Second failed"],

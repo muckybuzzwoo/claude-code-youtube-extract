@@ -20,6 +20,7 @@ import tempfile
 import argparse
 import shutil
 import datetime
+from collections.abc import Sequence
 
 # Force UTF-8 on Windows
 if sys.platform == "win32":
@@ -34,6 +35,12 @@ DEFAULT_SCENE_THRESHOLD = 0.04
 SCENE_MIN_GAP_SECONDS = 4.0
 SCENE_MAX_SCREENSHOTS = 50
 SCENE_SEEK_OFFSET = 0.5  # settle offset past the detected change (fades)
+
+# Perceptual frame-dedup (scenes mode): compare 16x16 grayscale thumbnails.
+# Mean-absolute-difference (0..255 scale) at or below the threshold counts as a
+# near-duplicate and is dropped. 16x16 gray keeps it cheap and layout-robust.
+PERCEPTUAL_DEDUP_THRESHOLD = 2.0
+THUMBNAIL_SIZE = 16
 
 
 def run_ytdlp(args: list[str]) -> subprocess.CompletedProcess:
@@ -242,6 +249,7 @@ def render_screenshot_status(
     screenshot_requested: int,
     screenshots: list[tuple[float, str]],
     screenshot_warnings: list[str],
+    deduped: int = 0,
 ) -> str:
     if not screenshots_enabled:
         return ""
@@ -250,10 +258,14 @@ def render_screenshot_status(
     if screenshot_marker:
         lines.append(screenshot_marker)
     elif screenshot_requested > 0:
-        success = len(screenshots)
-        lines.append(
-            f"{screenshot_requested} screenshots requested, {success} successfully extracted."
-        )
+        kept = len(screenshots)
+        # "extracted" counts frames ffmpeg actually wrote (kept + deduped), so
+        # perceptual dedup never looks like an extraction failure.
+        extracted = kept + deduped
+        line = f"{screenshot_requested} screenshots requested, {extracted} successfully extracted"
+        if deduped:
+            line += f", {deduped} near-duplicate(s) removed ({kept} kept)"
+        lines.append(line + ".")
     for warning in screenshot_warnings:
         lines.append(f"- WARNING: {warning}")
     lines.append("")
@@ -530,6 +542,42 @@ def thin_evenly(timestamps: list[float], max_count: int = SCENE_MAX_SCREENSHOTS)
     return [timestamps[i] for i in sorted(indices)]
 
 
+def frame_delta(a: Sequence[int], b: Sequence[int]) -> float:
+    """Mean absolute difference between two equal-length pixel sequences
+    (16x16 grayscale thumbnails, values 0..255).
+
+    Returns 0.0 for two empty inputs and ``inf`` on a length mismatch, so a
+    thumbnail that could not be built the same way as its neighbour is treated
+    as "definitely different" and kept rather than silently dropped.
+    """
+    if len(a) != len(b):
+        return float("inf")
+    if not a:
+        return 0.0
+    return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
+
+
+def dedupe_perceptual_indices(
+    thumbs: list[Sequence[int]],
+    threshold: float = PERCEPTUAL_DEDUP_THRESHOLD,
+) -> list[int]:
+    """Return the indices of frames to keep, dropping near-duplicates.
+
+    Keeps the first frame, then keeps each subsequent frame only when its
+    delta against the last *kept* frame is strictly greater than ``threshold``.
+    Comparing against the last kept frame (not the previous one) prevents slow
+    visual drift from accumulating unnoticed: a static slide collapses to a
+    single capture, while a gradual pan still yields periodic keeps.
+    """
+    kept: list[int] = []
+    last_thumb: Sequence[int] | None = None
+    for i, thumb in enumerate(thumbs):
+        if last_thumb is None or frame_delta(thumb, last_thumb) > threshold:
+            kept.append(i)
+            last_thumb = thumb
+    return kept
+
+
 def get_chapter_for_timestamp(timestamp: float, chapters: list[dict]) -> str | None:
     """Find chapter title for a given timestamp."""
     for ch in chapters:
@@ -746,6 +794,57 @@ def extract_screenshots(
             print(f"WARNING: {msg}", file=sys.stderr)
 
     return results
+
+
+def compute_thumbnail(png_path: str, size: int = THUMBNAIL_SIZE) -> list[int] | None:
+    """Render a size x size grayscale thumbnail of a PNG as raw pixel values
+    via ffmpeg (no PIL dependency). Returns size*size ints (0..255), or None if
+    ffmpeg fails or the raw output has the wrong length."""
+    cmd = [
+        "ffmpeg", "-v", "error",
+        "-i", png_path,
+        "-vf", f"scale={size}:{size},format=gray",
+        "-f", "rawvideo", "-",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0 or len(proc.stdout) != size * size:
+        return None
+    return list(proc.stdout)
+
+
+def dedupe_screenshots(
+    out_dir: str,
+    screenshots: list[tuple[float, str]],
+    threshold: float = PERCEPTUAL_DEDUP_THRESHOLD,
+) -> list[tuple[float, str]]:
+    """Drop near-duplicate frames from an extracted screenshot set.
+
+    Builds a 16x16 grayscale thumbnail per file, keeps the perceptually
+    distinct ones (see ``dedupe_perceptual_indices``), deletes the dropped PNGs
+    from ``out_dir``, and returns the filtered ``[(ts, filename), ...]`` list.
+    Fail-open: if any thumbnail can't be built, every frame is kept rather than
+    risk dropping a distinct one. Original capture-order filenames are preserved
+    (gaps in the NNN prefix are cosmetic).
+    """
+    if len(screenshots) < 2:
+        return screenshots
+    thumbs = [compute_thumbnail(os.path.join(out_dir, fn)) for _, fn in screenshots]
+    if any(t is None for t in thumbs):
+        return screenshots
+    keep = set(dedupe_perceptual_indices(thumbs, threshold))
+    result: list[tuple[float, str]] = []
+    for i, (ts, filename) in enumerate(screenshots):
+        if i in keep:
+            result.append((ts, filename))
+        else:
+            try:
+                os.remove(os.path.join(out_dir, filename))
+            except OSError:
+                pass
+    return result
 
 
 def _is_chapter_aligned(
@@ -1022,6 +1121,7 @@ def main():
     # threshold-parse fallback has a place to report.
     screenshots = []
     screenshot_requested = 0
+    screenshot_deduped = 0  # near-duplicates dropped in scenes mode
     screenshot_marker = ""  # "FFMPEG_MISSING" or "SCREENSHOTS_ASK_USER"
     if args.screenshots is not None:
         if not check_ffmpeg():
@@ -1074,6 +1174,13 @@ def main():
                     url, timestamps, out_dir, meta["chapters"],
                     screenshot_warnings,
                 )
+                # Scenes mode can fire on near-identical frames (held slides,
+                # sub-threshold changes). Drop perceptual duplicates. Explicit
+                # chapters/timestamps are intentional, so they are left as-is.
+                if ss_mode == "scenes" and len(screenshots) > 1:
+                    before = len(screenshots)
+                    screenshots = dedupe_screenshots(out_dir, screenshots)
+                    screenshot_deduped = before - len(screenshots)
             else:
                 emit_stage(stage_idx, total_stages, "No valid screenshot timestamps")
 
@@ -1102,6 +1209,7 @@ def main():
             screenshot_requested,
             screenshots,
             screenshot_warnings,
+            deduped=screenshot_deduped,
         ),
         render_comments(args.comments, comments),
     ]

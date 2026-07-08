@@ -4,6 +4,41 @@ All notable changes to `yt-extract` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] — 2026-07-08
+
+### Added
+- **Perceptual frame-dedup for scene-detection screenshots.** After extraction,
+  scenes mode compares 16×16 grayscale thumbnails of consecutive captures
+  (mean-absolute-difference against the last *kept* frame) and drops
+  near-duplicates — a slide held across several detected scene changes now
+  collapses to a single frame instead of many near-identical ones. Comparing
+  against the last kept frame (not the previous one) keeps a gradual pan while
+  removing static repeats. Runs **only** in scene-detection mode; `--screenshots
+  chapters` and explicit-timestamp captures are intentional and left untouched.
+  No new flag; the threshold is fixed (mean-abs-diff ≤ 2.0 on a 0–255 scale).
+  Pure ffmpeg + stdlib (no PIL). Approach ported from `frames.py` in
+  `bradautomates/claude-video`.
+
+### Changed
+- `### Screenshot Status` now reports dedup explicitly: when frames are removed
+  the count line reads `N screenshots requested, M successfully extracted,
+  D near-duplicate(s) removed (K kept)`. Previously deduped frames would have
+  been indistinguishable from extraction failures in the count. The `deduped`
+  count flows through `render_screenshot_status`; with zero dedup the wording is
+  unchanged.
+- Version bumped 1.8.3 → 1.9.0 across `.claude-plugin/plugin.json`,
+  `.claude-plugin/marketplace.json`, `CLAUDE.md`, and `README.md`.
+
+### Tests
+- Added unit coverage for the pure helpers `frame_delta` and
+  `dedupe_perceptual_indices` (drift-aware keep logic, threshold boundary,
+  length-mismatch fail-open) and for the `render_screenshot_status` dedup
+  clause. Suite: 81 passing. The ffmpeg-backed glue (`compute_thumbnail`,
+  `dedupe_screenshots`) stays outside the unit suite per the project's I/O
+  policy and was verified with an offline ffmpeg smoke check.
+
+- @mucky
+
 ## [1.8.3] — 2026-07-08
 
 Documentation-only release. No functional, output, or CLI change — extraction

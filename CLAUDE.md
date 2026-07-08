@@ -17,7 +17,7 @@ subagent per URL for transcript summarization.
 | Script | `scripts/yt-extract.py`       | Python backend — yt-dlp + ffmpeg + VTT                         |
 | Agent  | `agents/extract-worker.md`    | Restricted leaf worker the skill dispatches per URL (see below) |
 
-Current version: **1.8.3** — see [CHANGELOG.md](CHANGELOG.md).
+Current version: **1.9.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Architectural conventions
 
@@ -43,7 +43,7 @@ The skill always passes these flags on dispatch — users never type them direct
 | `--output-base <d>` | Base directory. Script creates `<d>/yt-extract_<DATE>_<slug>/`. Default: `.` (CWD).                 |
 | `--force`           | Overwrite an existing target folder. Without it, script exits `2` with `FOLDER_EXISTS:` on stderr.  |
 
-User-facing flags (`--comments`, `--screenshots [scenes[=t]|chapters|timestamps]`, `--full-transcript`, `--transcript-only`, `--no-save`, `--check`) are parsed by the skill in Step 0.4, translated to their script equivalents where relevant, and passed down. Since v1.8.0, bare `--screenshots` means ffmpeg scene detection (`select` filter, default threshold 0.04 since v1.8.2 — was 0.025, two-pass: detect on a ≤360p stream, extract at ≤1080p; 4s min-gap, max 50 captures with even thinning). `chapters` selects chapter markers (the pre-1.8.0 default; legacy value `auto` is an accepted alias). `--transcript-only` is also a script flag: it makes the script skip the metadata fetch, comments, and screenshots and emit only the `### Transcript Info` + `### Transcript` sections; the skill runs it directly (no subagent) and names the output folder by video ID.
+User-facing flags (`--comments`, `--screenshots [scenes[=t]|chapters|timestamps]`, `--full-transcript`, `--transcript-only`, `--no-save`, `--check`) are parsed by the skill in Step 0.4, translated to their script equivalents where relevant, and passed down. Since v1.8.0, bare `--screenshots` means ffmpeg scene detection (`select` filter, default threshold 0.04 since v1.8.2 — was 0.025, two-pass: detect on a ≤360p stream, extract at ≤1080p; 4s min-gap, max 50 captures with even thinning). Since v1.9.0 a **perceptual dedup pass** runs after extraction in scenes mode only (`dedupe_screenshots` → `compute_thumbnail` + the pure `dedupe_perceptual_indices`/`frame_delta`): it compares 16×16 grayscale thumbnails and drops near-duplicates (mean-abs-diff ≤ `PERCEPTUAL_DEDUP_THRESHOLD` = 2.0 vs the last *kept* frame), deleting the dropped PNGs. Fail-open — any unbuildable thumbnail keeps every frame. The dropped count is not a sentinel or a WARNING: it flows as the `deduped` int into `render_screenshot_status`, which appends `, D near-duplicate(s) removed (K kept)` to the count line. `chapters`/`timestamps` captures are never deduped. `chapters` selects chapter markers (the pre-1.8.0 default; legacy value `auto` is an accepted alias). `--transcript-only` is also a script flag: it makes the script skip the metadata fetch, comments, and screenshots and emit only the `### Transcript Info` + `### Transcript` sections; the skill runs it directly (no subagent) and names the output folder by video ID.
 
 ## Out-of-scope changes
 

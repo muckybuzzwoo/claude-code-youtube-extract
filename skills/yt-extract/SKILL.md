@@ -461,7 +461,7 @@ The Python backend is the source of truth for deterministic formatting. The skil
 [• If `--screenshots` was not requested: omit the section.]
 
 ## Screenshot Status
-[If present: success/error messages from subagent UNCHANGED — keep the `"N screenshots requested, M successfully extracted"` line even when the `## Screenshots` section above was suppressed due to chapter embedding. Scene mode may add `- WARNING:` lines (evenly thinned to 50, or no scene changes above threshold) — keep them unchanged too, they carry the re-run tuning hint.]
+[If present: success/error messages from subagent UNCHANGED — keep the `"N screenshots requested, M successfully extracted"` line even when the `## Screenshots` section above was suppressed due to chapter embedding. Since 1.9.0 scene mode may extend this line with `, D near-duplicate(s) removed (K kept)` when perceptual dedup dropped frames — keep it verbatim (the removed frames are not failures). Scene mode may also add `- WARNING:` lines (evenly thinned to 50, or no scene changes above threshold) — keep them unchanged too, they carry the re-run tuning hint.]
 [If `--screenshots` was not requested: omit the section.]
 
 ---
@@ -686,6 +686,7 @@ videos:
 - **--screenshots chapters without chapter markers:** `SCREENSHOTS_ASK_USER` marker → the worker returns it; the **orchestrator** asks the user for a strategy (evenly distributed or manual input) and re-dispatches with explicit timestamps (see "Handling worker-returned states" in Step 1). Only the explicit `chapters` mode produces this — bare `--screenshots` (scene detection) works without chapters.
 - **Scene detection finds nothing above threshold:** the run still succeeds with the opening frame only; `### Screenshot Status` carries a WARNING suggesting a lower threshold (e.g. `scenes=0.01`).
 - **Scene detection finds too many changes (>50 after the 4s min-gap):** evenly thinned to 50; WARNING in `### Screenshot Status` suggests a higher threshold (e.g. `scenes=0.05`).
+- **Near-identical scene captures (since 1.9.0):** after extraction, scenes mode drops perceptual duplicates (held slides, sub-threshold flicker) by comparing 16×16 grayscale thumbnails. This is automatic, scenes-only, and not tunable via a flag; `### Screenshot Status` reports it as `D near-duplicate(s) removed (K kept)`. `chapters`/`timestamps` captures are never deduped.
 - **Scene-detection pass runs long:** it decodes the whole video at low resolution — minutes on long videos. The `Detecting scene changes` stage marker covers the silence; the script enforces a duration-scaled timeout (max 30 min).
 - **Scene-detection stream stall/timeout:** WARNING in `### Screenshot Status`, run completes with 0 screenshots — suggest re-running with `--screenshots chapters` or explicit timestamps. An HTTP 403 (transiently invalidated stream URL) is retried once automatically with a fresh URL before the script gives up.
 - **Timestamp outside video duration:** skipped by the Python script with a WARNING, no interruption

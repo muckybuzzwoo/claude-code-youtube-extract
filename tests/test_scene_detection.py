@@ -128,3 +128,71 @@ def test_thin_evenly_reduces_to_max_count():
 def test_thin_evenly_uses_module_default_cap():
     ts = [float(i) for i in range(200)]
     assert len(yt_extract.thin_evenly(ts)) == yt_extract.SCENE_MAX_SCREENSHOTS
+
+
+# --- frame_delta (perceptual frame-dedup, adoption #1) ---
+
+
+def test_frame_delta_identical_is_zero():
+    assert yt_extract.frame_delta([10, 20, 30], [10, 20, 30]) == 0.0
+
+
+def test_frame_delta_uniform_offset_is_that_offset():
+    # Every pixel differs by 2 -> mean absolute difference is 2.0.
+    assert yt_extract.frame_delta([0, 0], [2, 2]) == 2.0
+
+
+def test_frame_delta_averages_over_pixels():
+    # |0-0| + |10-0| = 10, averaged over 2 pixels -> 5.0.
+    assert yt_extract.frame_delta([0, 10], [0, 0]) == 5.0
+
+
+def test_frame_delta_length_mismatch_is_infinite():
+    # Different-sized thumbnails can't be compared -> treat as "definitely
+    # different" so the caller keeps the frame rather than dropping it.
+    assert yt_extract.frame_delta([1, 2, 3], [1, 2]) == float("inf")
+
+
+def test_frame_delta_both_empty_is_zero():
+    assert yt_extract.frame_delta([], []) == 0.0
+
+
+# --- dedupe_perceptual_indices ---
+
+
+def test_dedupe_empty_returns_empty():
+    assert yt_extract.dedupe_perceptual_indices([], threshold=2.0) == []
+
+
+def test_dedupe_single_frame_kept():
+    assert yt_extract.dedupe_perceptual_indices([[5]], threshold=2.0) == [0]
+
+
+def test_dedupe_all_identical_keeps_only_first():
+    thumbs = [[7], [7], [7], [7]]
+    assert yt_extract.dedupe_perceptual_indices(thumbs, threshold=2.0) == [0]
+
+
+def test_dedupe_distinct_frames_all_kept():
+    thumbs = [[0], [100], [0], [100]]
+    assert yt_extract.dedupe_perceptual_indices(thumbs, threshold=2.0) == [0, 1, 2, 3]
+
+
+def test_dedupe_compares_against_last_kept_not_last_seen():
+    # Gradual drift: each frame is only 1 apart from its predecessor, but the
+    # comparison is against the last KEPT frame. 0 kept; 1 (delta 1) drop;
+    # 2 (delta 2, not > 2) drop; 3 (delta 3 vs frame 0) kept.
+    thumbs = [[0], [1], [2], [3]]
+    assert yt_extract.dedupe_perceptual_indices(thumbs, threshold=2.0) == [0, 3]
+
+
+def test_dedupe_threshold_boundary_is_dropped():
+    # Exactly at threshold counts as a near-duplicate (keep only if strictly
+    # greater), matching "mean-abs-diff <= threshold -> dropped".
+    assert yt_extract.dedupe_perceptual_indices([[0], [2]], threshold=2.0) == [0]
+
+
+def test_dedupe_uses_module_default_threshold():
+    # Delta of 1.0 is below the default 2.0 -> second frame dropped.
+    assert yt_extract.dedupe_perceptual_indices([[0], [1]]) == [0]
+    assert yt_extract.PERCEPTUAL_DEDUP_THRESHOLD == 2.0
